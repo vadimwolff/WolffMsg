@@ -26,3 +26,6 @@ npm-debug.log*
 # Prisma local artifacts
 packages/server/prisma/*.db
 packages/server/prisma/*.db-journal
+
+# Redis local dump
+dump.rdb

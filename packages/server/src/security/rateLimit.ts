@@ -23,7 +23,11 @@ export interface RateLimitRule {
 export const RATE_LIMITS = {
   register: {
     name: 'register',
-    limit: 5,
+    // Ten rather than a handful: households, offices and universities share a
+    // public address, and locking out a whole building to slow one abuser is
+    // the wrong trade. Registration is still bounded, and account creation is
+    // additionally gated by ALLOW_REGISTRATION on a private deployment.
+    limit: 10,
     windowSeconds: 3_600,
     message: 'Too many accounts created from here. Try again in an hour.',
   },
