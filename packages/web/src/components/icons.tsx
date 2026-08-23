@@ -327,6 +327,14 @@ export const KeyIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const ServerIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="7" rx="2" />
+    <rect x="3" y="13" width="18" height="7" rx="2" />
+    <path d="M7 7.5h.01M7 16.5h.01" />
+  </Icon>
+);
+
 export const OfflineIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M2.5 8.5a15 15 0 0 1 5-3M16.5 5.5a15 15 0 0 1 5 3M6.5 12.2a10 10 0 0 1 3-1.7M14.5 10.5a10 10 0 0 1 3 1.7M10.2 15.8a5 5 0 0 1 3.6 0M12 19.5h.01" />

@@ -9,8 +9,14 @@ import {
   type AppearanceSettings,
   type SelfUser,
 } from '@wolffmsg/shared';
-import { api } from '../lib/api.ts';
+import { ApiError, NetworkError, api, forgetCsrfToken } from '../lib/api.ts';
 import { realtime, type ConnectionState } from '../lib/socket.ts';
+import {
+  clearServerOrigin,
+  needsServerChoice,
+  serverOrigin,
+  setServerOrigin,
+} from '../lib/serverOrigin.ts';
 import {
   adoptIdentity,
   createIdentity,
@@ -34,7 +40,12 @@ export interface ServerConfig {
   turnConfigured: boolean;
 }
 
-type Phase = 'booting' | 'signed-out' | 'signed-in' | 'unsupported';
+type Phase =
+  | 'booting'
+  | 'needs-server'
+  | 'signed-out'
+  | 'signed-in'
+  | 'unsupported';
 
 interface SessionState {
   phase: Phase;
@@ -45,7 +56,14 @@ interface SessionState {
   /** Set when the browser cannot support the security model at all. */
   blockingError: string | null;
 
+  /** The API origin in use, or `''` when the server serves this page itself. */
+  serverOrigin: string;
+
   boot: () => Promise<void>;
+  /** Point this client at a server and boot against it. */
+  connectToServer: (origin: string) => Promise<void>;
+  /** Forget the chosen server, wipe local keys, and return to the connect screen. */
+  forgetServer: () => Promise<void>;
   register: (input: {
     username: string;
     password: string;
@@ -56,6 +74,20 @@ interface SessionState {
   refreshUser: () => Promise<void>;
   applyAppearance: (appearance: Partial<AppearanceSettings>) => Promise<void>;
   setUser: (user: SelfUser) => void;
+}
+
+/**
+ * Tell "no WolffMsg server here" apart from "the server answered badly".
+ *
+ * A static host serves its 404 page for `/api/config`; a wrong hostname or a
+ * blocked CORS preflight fails before any response arrives. Both mean the
+ * address is wrong. A 500 does not — that server exists and is having a bad
+ * day, and pushing someone to re-enter a correct address would not help.
+ */
+function isServerUnreachable(err: unknown): boolean {
+  if (err instanceof NetworkError) return true;
+  if (err instanceof ApiError) return err.status === 404 || err.status === 405;
+  return false;
 }
 
 /** Describe this browser for the device list, without fingerprinting detail. */
@@ -122,6 +154,73 @@ export const useSession = create<SessionState>((set, get) => ({
   config: null,
   connection: 'offline',
   blockingError: null,
+  serverOrigin: serverOrigin(),
+
+  connectToServer: async (origin) => {
+    // Throws with a readable reason if the address is not a usable origin.
+    const normalised = setServerOrigin(origin);
+
+    /*
+     * The phase deliberately stays `needs-server` until the address is known
+     * to work. Switching to `booting` here would unmount the form mid-request,
+     * and the error this throws would land on a component that no longer
+     * exists — the screen would silently reset instead of saying what failed.
+     */
+    let config: ServerConfig;
+    try {
+      config = await api.get<ServerConfig>('/api/config');
+    } catch (err) {
+      // Keep a chosen origin only when something that looks like a server
+      // answered; a wrong address must not linger and break the next attempt.
+      if (isServerUnreachable(err)) {
+        clearServerOrigin();
+        throw new Error('No WolffMsg server answered at that address');
+      }
+      throw err;
+    }
+
+    set({ config, serverOrigin: normalised, phase: 'booting' });
+    await initSession();
+
+    try {
+      const me = await api.get<{ user: SelfUser; deviceId: string | null }>(
+        '/api/auth/me',
+      );
+      applyAppearanceToDocument(me.user.appearance);
+      set({ phase: 'signed-in', user: me.user, deviceId: me.deviceId });
+      realtime.connect();
+      void runKeyMaintenance();
+    } catch {
+      set({ phase: 'signed-out', user: null, deviceId: null });
+    }
+  },
+
+  forgetServer: async () => {
+    realtime.disconnect();
+    await api.post('/api/auth/logout').catch(() => undefined);
+
+    /*
+     * Device keys are registered with one server, so pointing this client at a
+     * different one leaves them meaningless. Wipe them along with everything
+     * they decrypt, exactly as signing out does — a switch must not leave one
+     * server's plaintext cache sitting in front of another server's account.
+     */
+    releaseAllAttachments();
+    clearMemory();
+    await destroyVault().catch(() => undefined);
+    await destroyDb().catch(() => undefined);
+    forgetSession();
+    forgetCsrfToken();
+    clearServerOrigin();
+
+    set({
+      phase: 'needs-server',
+      user: null,
+      deviceId: null,
+      config: null,
+      serverOrigin: serverOrigin(),
+    });
+  },
 
   boot: async () => {
     // The security model rests on Web Crypto and IndexedDB. Without them the
@@ -138,11 +237,25 @@ export const useSession = create<SessionState>((set, get) => ({
 
     realtime.onStateChange((connection) => set({ connection }));
 
+    /*
+     * `/api/config` doubles as a reachability probe. A static host has no API
+     * to answer it, and rather than dropping someone onto a sign-in form whose
+     * every button will fail, the app asks which server to talk to.
+     */
+    if (needsServerChoice()) {
+      set({ phase: 'needs-server' });
+      return;
+    }
+
     try {
       const config = await api.get<ServerConfig>('/api/config');
       set({ config });
-    } catch {
-      // Not fatal — the sign-in screen can still render.
+    } catch (err) {
+      if (isServerUnreachable(err)) {
+        set({ phase: 'needs-server' });
+        return;
+      }
+      // Reachable but unhappy — the sign-in screen can still render.
     }
 
     await initSession();
@@ -268,6 +381,7 @@ export const useSession = create<SessionState>((set, get) => ({
     await destroyVault().catch(() => undefined);
     await destroyDb().catch(() => undefined);
     forgetSession();
+    forgetCsrfToken();
 
     set({ phase: 'signed-out', user: null, deviceId: null });
   },

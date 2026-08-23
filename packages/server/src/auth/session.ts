@@ -228,9 +228,10 @@ function baseCookieOptions() {
   return {
     path: '/',
     httpOnly: true,
-    // `strict` would break the OAuth-less flow not at all, and it is the
-    // strongest CSRF mitigation available at the cookie layer.
-    sameSite: 'strict' as const,
+    // `strict` is the default and the strongest CSRF mitigation available at
+    // the cookie layer; see COOKIE_SAMESITE in env.ts for the one deployment
+    // shape that has to relax it.
+    sameSite: env.COOKIE_SAMESITE,
     secure: env.COOKIE_SECURE,
   };
 }
@@ -252,7 +253,7 @@ export function setCsrfCookie(reply: FastifyReply, token: string): void {
   reply.setCookie(csrfCookieName(), token, {
     path: '/',
     httpOnly: false,
-    sameSite: 'strict',
+    sameSite: env.COOKIE_SAMESITE,
     secure: env.COOKIE_SECURE,
     maxAge: 60 * 60 * 24 * 30,
   });

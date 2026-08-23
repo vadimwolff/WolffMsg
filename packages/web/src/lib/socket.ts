@@ -11,6 +11,7 @@ import {
   type ClientCommand,
   type ServerEvent,
 } from '@wolffmsg/shared';
+import { socketUrl } from './serverOrigin.ts';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
 
@@ -76,8 +77,7 @@ class RealtimeClient {
 
     this.setState(this.attempt === 0 ? 'connecting' : 'reconnecting');
 
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/ws`);
+    const socket = new WebSocket(socketUrl());
     this.socket = socket;
 
     socket.onopen = () => {

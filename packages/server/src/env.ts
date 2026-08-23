@@ -36,6 +36,22 @@ const schema = z.object({
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   PUBLIC_URL: z.string().default('http://localhost:5173'),
   COOKIE_SECURE: booleanish.default('false'),
+  /*
+   * `strict` is the default and the one we recommend: the browser then refuses
+   * to attach the session cookie to any cross-site request at all, which is a
+   * CSRF defence no application code can get wrong.
+   *
+   * `none` exists for one real deployment shape — the web client served from a
+   * different origin than the API, such as a static host — where `strict` would
+   * simply never send the cookie and nobody could sign in. It is a genuine
+   * weakening: CSRF then rests entirely on the Origin allow-list and the
+   * double-submit token in `security/csrf.ts`. It requires COOKIE_SECURE.
+   */
+  COOKIE_SAMESITE: z
+    .string()
+    .transform((v) => v.trim().toLowerCase())
+    .pipe(z.enum(['strict', 'lax', 'none']))
+    .default('strict'),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().optional().default(''),
@@ -90,6 +106,27 @@ if (
     'WolffMsg cannot start — SESSION_SECRET still holds the example value.',
   );
   process.exit(1);
+}
+
+/*
+ * `SameSite=None` without `Secure` is rejected outright by every current
+ * browser, so this configuration would not fail loudly — it would simply never
+ * authenticate anyone. Fail at boot instead.
+ */
+if (raw.COOKIE_SAMESITE === 'none' && !raw.COOKIE_SECURE) {
+  console.error(
+    'WolffMsg cannot start — COOKIE_SAMESITE=none requires COOKIE_SECURE=true. ' +
+      'Browsers discard a SameSite=None cookie that is not marked Secure.',
+  );
+  process.exit(1);
+}
+
+if (raw.COOKIE_SAMESITE === 'none') {
+  console.warn(
+    'WolffMsg: COOKIE_SAMESITE=none. Session cookies will travel on cross-site ' +
+      'requests, so CSRF protection now rests only on the WEB_ORIGIN allow-list ' +
+      'and the double-submit token. Keep WEB_ORIGIN exact.',
+  );
 }
 
 if (raw.NODE_ENV === 'production' && !raw.COOKIE_SECURE) {

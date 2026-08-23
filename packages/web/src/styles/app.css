@@ -2333,6 +2333,14 @@
   line-height: var(--leading-normal);
 }
 
+/* A row of controls closing a block; wraps rather than overflowing on mobile. */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .avatar-editor {
   display: flex;
   align-items: center;

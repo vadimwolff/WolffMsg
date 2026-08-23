@@ -42,6 +42,16 @@ export function assertCsrf(request: FastifyRequest): void {
   const hasSession = Boolean(request.cookies?.[sessionCookieName()]);
   if (!hasSession) return;
 
+  /*
+   * With `SameSite=none` the browser is no longer refusing cross-site requests
+   * for us, so a *missing* Origin header can no longer be read as "same-site".
+   * Every browser sends one on a cross-origin fetch, so requiring it costs
+   * nothing and closes the gap the relaxed cookie opens.
+   */
+  if (env.COOKIE_SAMESITE === 'none' && !origin) {
+    throw forbidden('This request did not declare an origin');
+  }
+
   const cookieToken = request.cookies?.[csrfCookieName()];
   const headerToken = request.headers[CSRF_HEADER];
   const provided = Array.isArray(headerToken) ? headerToken[0] : headerToken;

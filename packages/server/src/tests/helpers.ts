@@ -105,6 +105,12 @@ export async function request<T = unknown>(
     ...options.headers,
   };
 
+  // An explicit `undefined` means "send this request without that header",
+  // which is how a test reproduces a browser that omitted one.
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) delete headers[name];
+  }
+
   if (options.actor) {
     headers.cookie = options.actor.cookie;
     headers['x-wolff-csrf'] = options.actor.csrfToken;

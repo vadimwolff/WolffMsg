@@ -1,0 +1,96 @@
+#
+# Publish the WolffMsg web client to GitHub Pages.
+#
+# Pages hosts static files, and WolffMsg needs PostgreSQL, Redis and a
+# WebSocket server, so this publishes the *client* only. That is not a demo or
+# a mock: the client is the security-critical half — keys are generated in it,
+# messages are encrypted and decrypted in it, and the server only ever relays
+# ciphertext. Opening the published page asks which WolffMsg server to talk to
+# and then works against it for real.
+#
+# Set the repository variable `API_ORIGIN` (Settings → Secrets and variables →
+# Actions → Variables) to pre-fill that address, e.g. https://chat.example.com.
+# Leave it unset and each visitor is asked. Either way the server must run with
+# COOKIE_SAMESITE=none, COOKIE_SECURE=true, and this Pages URL in WEB_ORIGIN —
+# see DEPLOYMENT.md for what that costs.
+#
+name: Deploy web client to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/web/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a queued run supersedes a waiting one but never
+# interrupts a deployment already in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The web build imports the compiled shared package.
+      - run: npm run build -w @wolffmsg/shared
+
+      - name: Resolve the base path
+        id: base
+        run: |
+          # A user or organisation site is served from the root; a project site
+          # lives under /<repo>/, and every asset URL has to agree.
+          if [[ "${{ github.event.repository.name }}" == *.github.io ]]; then
+            echo "path=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=/${{ github.event.repository.name }}/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the client
+        env:
+          BASE_PATH: ${{ steps.base.outputs.path }}
+          VITE_API_ORIGIN: ${{ vars.API_ORIGIN }}
+        run: npm run build -w @wolffmsg/web
+
+      - name: Prepare the artifact
+        run: |
+          # Pages runs Jekyll over the upload unless told not to, which would
+          # drop any file or directory beginning with an underscore.
+          touch packages/web/dist/.nojekyll
+          # Pages has no SPA rewrite, so a deep link 404s. Serving the same
+          # document as the 404 page makes it load the app instead.
+          cp packages/web/dist/index.html packages/web/dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

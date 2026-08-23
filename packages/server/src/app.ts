@@ -98,7 +98,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(cookie, {
-    parseOptions: { httpOnly: true, sameSite: 'strict', path: '/' },
+    parseOptions: { httpOnly: true, sameSite: env.COOKIE_SAMESITE, path: '/' },
   });
 
   await app.register(multipart, {

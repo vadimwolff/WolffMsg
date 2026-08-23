@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AuthScreen } from './screens/AuthScreen.tsx';
 import { AppShell } from './screens/AppShell.tsx';
+import { ConnectServerScreen } from './screens/ConnectServerScreen.tsx';
 import { Logo } from './components/Logo.tsx';
 import { Spinner } from './components/primitives.tsx';
 import { AlertIcon } from './components/icons.tsx';
@@ -90,6 +91,16 @@ export function App() {
             <Spinner size={20} />
             <p className="boot-label">Unlocking</p>
           </div>
+        </motion.div>
+      ) : phase === 'needs-server' ? (
+        <motion.div
+          key="connect"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.24 }}
+          style={{ height: '100%' }}
+        >
+          <ConnectServerScreen />
         </motion.div>
       ) : phase === 'signed-out' ? (
         <motion.div

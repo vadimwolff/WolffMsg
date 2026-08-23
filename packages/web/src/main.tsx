@@ -24,8 +24,14 @@ createRoot(container).render(
  */
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
-      /* offline shell unavailable; the app still runs */
-    });
+    // `BASE_URL` is `/` for the usual deployment and `/<repo>/` when the client
+    // is published under a subpath. The worker derives its own scope from where
+    // it was served, so these two must agree.
+    const base = import.meta.env.BASE_URL;
+    void navigator.serviceWorker
+      .register(`${base}sw.js`, { scope: base })
+      .catch(() => {
+        /* offline shell unavailable; the app still runs */
+      });
   });
 }

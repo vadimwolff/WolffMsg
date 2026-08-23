@@ -4,7 +4,20 @@ import react from '@vitejs/plugin-react';
 
 const API_TARGET = process.env.VITE_API_TARGET ?? 'http://127.0.0.1:4000';
 
+/*
+ * Where the built client will be served from. `/` covers the normal case — the
+ * server, or a reverse proxy in front of it, serving the app at the root of a
+ * hostname. A static host that publishes under a subpath (GitHub Pages at
+ * `/<repo>/`) sets this instead, and every asset URL is rewritten to match.
+ */
+const BASE = (() => {
+  const raw = (process.env.BASE_PATH ?? '/').trim() || '/';
+  const withLeading = raw.startsWith('/') ? raw : `/${raw}`;
+  return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
+})();
+
 export default defineConfig({
+  base: BASE,
   plugins: [react()],
   /*
    * libsodium's ESM bundle carries a Node-only branch that uses top-level

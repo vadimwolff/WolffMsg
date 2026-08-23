@@ -6,6 +6,7 @@
  * into a typed `ApiError` with a message that is safe to show a person.
  */
 import type { ApiErrorBody } from '@wolffmsg/shared';
+import { apiUrl, isSplitOrigin } from './serverOrigin.ts';
 
 const CSRF_HEADER = 'x-wolff-csrf';
 
@@ -38,6 +39,30 @@ export class NetworkError extends Error {
 }
 
 /**
+ * The CSRF token, when the cookie holding it belongs to another origin.
+ *
+ * In the ordinary same-origin deployment this stays null and the cookie below
+ * is the source of truth. In a split-origin deployment the cookie is set on the
+ * API's origin, so this page cannot read it — the server hands the same value
+ * back in the body of every response that establishes or confirms a session,
+ * and that copy is kept here. Only an origin on the server's CORS allow-list
+ * can read those responses at all, so a hostile page still cannot learn it.
+ */
+let carriedToken: string | null = null;
+
+/** Capture a `csrfToken` field from any response that carries one. */
+function rememberToken(payload: unknown): void {
+  if (typeof payload !== 'object' || payload === null) return;
+  const token = (payload as { csrfToken?: unknown }).csrfToken;
+  if (typeof token === 'string' && token) carriedToken = token;
+}
+
+/** Drop the carried token — called on sign-out, alongside everything else local. */
+export function forgetCsrfToken(): void {
+  carriedToken = null;
+}
+
+/**
  * Read the CSRF token from its cookie.
  *
  * Deliberately read fresh each time rather than cached: the server rotates it
@@ -52,7 +77,7 @@ function csrfToken(): string | null {
       return decodeURIComponent(part.slice(eq + 1).trim());
     }
   }
-  return null;
+  return carriedToken;
 }
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -117,13 +142,15 @@ export async function apiRequest<T>(
 
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       method,
       headers,
       body,
       // Cookies are the whole authentication story; without this the request
-      // is anonymous.
-      credentials: 'same-origin',
+      // is anonymous. `same-origin` stays the default so a same-origin
+      // deployment cannot accidentally leak credentials to a third party;
+      // `include` is used only where the API genuinely lives elsewhere.
+      credentials: isSplitOrigin() ? 'include' : 'same-origin',
       ...(options.signal ? { signal: options.signal } : {}),
     });
   } catch (err) {
@@ -143,7 +170,9 @@ export async function apiRequest<T>(
 
   const contentType = response.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
-    return (await response.json()) as T;
+    const payload = (await response.json()) as T;
+    rememberToken(payload);
+    return payload;
   }
   return (await response.arrayBuffer()) as T;
 }
@@ -197,7 +226,7 @@ function uploadWithProgress<T>(
     // neutral one so nothing derived from user input travels at all.
     form.append(options.fieldName ?? 'file', file, options.filename ?? 'blob');
 
-    xhr.open('POST', path, true);
+    xhr.open('POST', apiUrl(path), true);
     xhr.withCredentials = true;
 
     const token = csrfToken();
@@ -212,7 +241,9 @@ function uploadWithProgress<T>(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          resolve(JSON.parse(xhr.responseText) as T);
+          const payload = JSON.parse(xhr.responseText) as T;
+          rememberToken(payload);
+          resolve(payload);
         } catch {
           reject(new ApiError(xhr.status, 'bad_response', 'Unexpected server response'));
         }

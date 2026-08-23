@@ -9,6 +9,7 @@ import {
   signChallenge,
 } from './helpers.js';
 import { hashPassword, needsRehash, verifyPassword } from '../auth/password.js';
+import { env } from '../env.js';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -487,6 +488,47 @@ describe('CSRF', () => {
       headers: { cookie: actor.cookie },
     });
     expect(response.status).toBe(200);
+  });
+
+  /*
+   * Split-origin deployments (a client on a static host) must relax the cookie
+   * to `SameSite=none`, at which point a missing Origin header can no longer be
+   * read as "same-site" — the browser is no longer refusing cross-site requests
+   * on our behalf. The header becomes mandatory for anything carrying a session.
+   */
+  it('requires an Origin header on a session request when SameSite is none', async () => {
+    const actor = await createActor();
+    const original = env.COOKIE_SAMESITE;
+    (env as { COOKIE_SAMESITE: string }).COOKIE_SAMESITE = 'none';
+    try {
+      const withoutOrigin = await request({
+        method: 'POST',
+        url: '/api/chats/direct',
+        headers: {
+          cookie: actor.cookie,
+          'x-wolff-csrf': actor.csrfToken,
+          origin: undefined as unknown as string,
+        },
+        payload: { userId: actor.userId },
+      });
+      expect(withoutOrigin.status).toBe(403);
+
+      const withOrigin = await request({
+        method: 'POST',
+        url: '/api/chats/direct',
+        headers: {
+          cookie: actor.cookie,
+          'x-wolff-csrf': actor.csrfToken,
+          origin: env.webOrigins[0] ?? 'http://localhost:5173',
+        },
+        payload: { userId: actor.userId },
+      });
+      // A chat with oneself is refused on its own merits — what matters is
+      // that CSRF let it through to the route at all.
+      expect(withOrigin.status).not.toBe(403);
+    } finally {
+      (env as { COOKIE_SAMESITE: string }).COOKIE_SAMESITE = original;
+    }
   });
 });
 
