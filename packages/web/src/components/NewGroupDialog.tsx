@@ -7,6 +7,7 @@ import { useUi } from '../store/ui.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button, Field, Modal, TextArea } from './primitives.tsx';
 import { CheckIcon, SearchIcon } from './icons.tsx';
+import { onAsync } from '../lib/async.ts';
 
 export function NewGroupDialog({
   open,
@@ -44,7 +45,7 @@ export function NewGroupDialog({
       return;
     }
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(onAsync(async () => {
       try {
         const response = await api.get<{ users: PublicUser[] }>(
           `/api/users/search?q=${encodeURIComponent(needle)}`,
@@ -54,7 +55,7 @@ export function NewGroupDialog({
       } catch {
         setResults([]);
       }
-    }, 280);
+    }), 280);
     return () => {
       controller.abort();
       window.clearTimeout(timer);

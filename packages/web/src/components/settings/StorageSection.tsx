@@ -6,6 +6,7 @@ import { DatabaseIcon, TrashIcon } from '../icons.tsx';
 import { formatBytes, releaseAllAttachments } from '../../crypto/attachments.ts';
 import { STORE_MESSAGES, idbClear } from '../../lib/idb.ts';
 import { clearMemory } from '../../crypto/messageCache.ts';
+import { onAsync } from '../../lib/async.ts';
 
 interface Usage {
   attachmentBytes: number;
@@ -107,7 +108,7 @@ export function StorageSection() {
           variant="danger"
           icon={<TrashIcon size={16} />}
           loading={clearing}
-          onClick={async () => {
+          onClick={onAsync(async () => {
             setClearing(true);
             try {
               releaseAllAttachments();
@@ -122,7 +123,7 @@ export function StorageSection() {
             } finally {
               setClearing(false);
             }
-          }}
+          })}
         >
           Clear local message cache
         </Button>

@@ -17,6 +17,7 @@ import { useUi } from '../../store/ui.ts';
 import { Badge, Button, Skeleton } from '../primitives.tsx';
 import { DeviceIcon, KeyIcon, LogOutIcon, TrashIcon } from '../icons.tsx';
 import { formatFullDateTime } from '../../lib/format.ts';
+import { onAsync } from '../../lib/async.ts';
 
 export function DevicesSection() {
   const toast = useUi((s) => s.toast);
@@ -96,7 +97,7 @@ export function DevicesSection() {
                   variant="danger"
                   icon={<TrashIcon size={14} />}
                   loading={busy === device.id}
-                  onClick={async () => {
+                  onClick={onAsync(async () => {
                     setBusy(device.id);
                     try {
                       await api.delete(`/api/devices/${device.id}`);
@@ -107,7 +108,7 @@ export function DevicesSection() {
                     } finally {
                       setBusy(null);
                     }
-                  }}
+                  })}
                 >
                   Remove
                 </Button>
@@ -156,7 +157,7 @@ export function DevicesSection() {
                   variant="danger"
                   icon={<LogOutIcon size={14} />}
                   loading={busy === session.id}
-                  onClick={async () => {
+                  onClick={onAsync(async () => {
                     setBusy(session.id);
                     try {
                       await api.delete(`/api/auth/sessions/${session.id}`);
@@ -167,7 +168,7 @@ export function DevicesSection() {
                     } finally {
                       setBusy(null);
                     }
-                  }}
+                  })}
                 >
                   Log out
                 </Button>
@@ -181,7 +182,7 @@ export function DevicesSection() {
             variant="danger"
             icon={<LogOutIcon size={16} />}
             loading={busy === 'all'}
-            onClick={async () => {
+            onClick={onAsync(async () => {
               setBusy('all');
               try {
                 const response = await api.post<{ revoked: number }>(
@@ -199,7 +200,7 @@ export function DevicesSection() {
               } finally {
                 setBusy(null);
               }
-            }}
+            })}
           >
             Log out all other devices
           </Button>

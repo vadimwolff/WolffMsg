@@ -22,7 +22,7 @@
  * shape — but the transport story is weaker, so shape 1 stays the default.
  */
 
-const STORAGE_KEY = 'wolffmsg.server-origin';
+import { PREF, readPref, removePref, writePref } from './prefs.ts';
 
 /** Set at build time. Empty (the default) means "same origin". */
 const BUILD_TIME_ORIGIN = normaliseOrigin(
@@ -83,12 +83,9 @@ export function describeOriginProblem(value: string): string | null {
 function loadOverride(): void {
   if (loaded) return;
   loaded = true;
-  try {
-    override = normaliseOrigin(localStorage.getItem(STORAGE_KEY) ?? '') || null;
-  } catch {
-    // Storage can be blocked outright; the build-time default still applies.
-    override = null;
-  }
+  // A stored value is re-validated: it may predate a tightening of the rules
+  // below, and it is the source of every API URL this client builds.
+  override = normaliseOrigin(readPref(PREF.serverOrigin) ?? '') || null;
 }
 
 /**
@@ -133,11 +130,8 @@ export function setServerOrigin(value: string): string {
   }
   loadOverride();
   override = normalised;
-  try {
-    localStorage.setItem(STORAGE_KEY, normalised);
-  } catch {
-    // Not fatal: the choice holds for this page load.
-  }
+  // Not fatal if this does not persist: the choice still holds for this load.
+  writePref(PREF.serverOrigin, normalised);
   return normalised;
 }
 
@@ -145,11 +139,7 @@ export function setServerOrigin(value: string): string {
 export function clearServerOrigin(): void {
   loadOverride();
   override = null;
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Nothing to undo.
-  }
+  removePref(PREF.serverOrigin);
 }
 
 /** True when this build has no server to talk to until someone names one. */

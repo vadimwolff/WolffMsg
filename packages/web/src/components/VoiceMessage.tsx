@@ -12,6 +12,7 @@ import { openAttachment } from '../crypto/attachments.ts';
 import { PauseIcon, PlayIcon } from './icons.tsx';
 import { Spinner } from './primitives.tsx';
 import { formatDuration } from '../lib/format.ts';
+import { onAsync } from '../lib/async.ts';
 
 interface Props {
   voice: { durationMs: number; waveform: number[] };
@@ -72,7 +73,7 @@ export function VoiceMessage({ voice, attachment, mine }: Props) {
       <button
         type="button"
         className="voice-button"
-        onClick={toggle}
+        onClick={onAsync(toggle)}
         disabled={!attachment}
         aria-label={playing ? 'Pause voice message' : 'Play voice message'}
       >

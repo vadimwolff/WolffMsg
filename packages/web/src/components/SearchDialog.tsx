@@ -16,6 +16,7 @@ import { Avatar } from './Avatar.tsx';
 import { EmptyState, Modal, Segmented } from './primitives.tsx';
 import { LockIcon, SearchIcon } from './icons.tsx';
 import { formatListTimestamp } from '../lib/format.ts';
+import { onAsync } from '../lib/async.ts';
 
 type Scope = 'messages' | 'people';
 
@@ -54,7 +55,7 @@ export function SearchDialog({
 
     setSearching(true);
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(onAsync(async () => {
       try {
         if (scope === 'messages') {
           setHits(await searchMessages(needle));
@@ -70,7 +71,7 @@ export function SearchDialog({
       } finally {
         setSearching(false);
       }
-    }, 200);
+    }), 200);
 
     return () => {
       controller.abort();

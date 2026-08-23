@@ -169,6 +169,7 @@ export async function keyRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!device) throw notFound('That device is not registered to you');
 
+    // eslint-disable-next-line no-control-regex -- stripping them is the point
     const clean = name.replace(/[\u0000-\u001F\u007F]/g, '').trim();
     if (!clean) throw badRequest('Give the device a name');
 

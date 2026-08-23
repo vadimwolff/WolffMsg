@@ -93,7 +93,7 @@ export function idbGet<T>(store: string, key: IDBValidKey): Promise<T | undefine
   return run<T | undefined>(
     store,
     'readonly',
-    (s) => s.get(key) as unknown as IDBRequest<T | undefined>,
+    (s) => s.get(key) as IDBRequest<T | undefined>,
   );
 }
 

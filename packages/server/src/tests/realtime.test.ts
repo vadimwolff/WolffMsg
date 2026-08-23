@@ -12,7 +12,11 @@ import {
   sendEncrypted,
   type TestActor,
 } from './helpers.js';
-import { attachWebSocketServer, shutdownWebSockets } from '../realtime/socket.js';
+import {
+  attachWebSocketServer,
+  frameText,
+  shutdownWebSockets,
+} from '../realtime/socket.js';
 import { initHub } from '../realtime/hub.js';
 import { env } from '../env.js';
 
@@ -67,7 +71,7 @@ class TestSocket {
 
     socket.on('message', (raw) => {
       try {
-        client.events.push(JSON.parse(raw.toString()) as ServerEvent);
+        client.events.push(JSON.parse(frameText(raw)) as ServerEvent);
       } catch {
         /* ignore malformed frames */
       }

@@ -1,0 +1,6 @@
+{
+  // See packages/server/tsconfig.build.json — tests are type-checked but not
+  // shipped in `dist`.
+  "extends": "./tsconfig.json",
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
+}

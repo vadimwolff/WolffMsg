@@ -7,6 +7,7 @@ import { Avatar } from '../Avatar.tsx';
 import { Button, Segmented, Toggle } from '../primitives.tsx';
 import { BlockIcon } from '../icons.tsx';
 import { useEffect } from 'react';
+import { onAsync } from '../../lib/async.ts';
 
 const AUDIENCE_OPTIONS: { value: PrivacyAudience; label: string }[] = [
   { value: 'everyone', label: 'Everyone' },
@@ -34,7 +35,7 @@ export function PrivacySection() {
     setSaving(true);
     // Optimistic, so a toggle responds instantly; reverted if the call fails.
     const previous = user;
-    setUser({ ...user, privacy: { ...user.privacy, ...patch } as typeof user.privacy });
+    setUser({ ...user, privacy: { ...user.privacy, ...patch } });
     try {
       const response = await api.patch<{ user: typeof user }>('/api/me/privacy', patch);
       if (response.user) setUser(response.user);
@@ -171,11 +172,11 @@ export function PrivacySection() {
                 <Button
                   size="sm"
                   icon={<BlockIcon size={14} />}
-                  onClick={async () => {
+                  onClick={onAsync(async () => {
                     await api.delete(`/api/blocked/${entry.user.id}`);
                     setBlocked((prev) => prev.filter((b) => b.user.id !== entry.user.id));
                     toast('Unblocked', 'success');
-                  }}
+                  })}
                 >
                   Unblock
                 </Button>

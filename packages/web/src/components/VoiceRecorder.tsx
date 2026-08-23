@@ -12,6 +12,7 @@ import { waveformFromSamples } from '@wolffmsg/shared';
 import { IconButton, Spinner } from './primitives.tsx';
 import { AlertIcon, CloseIcon, MicIcon, SendIcon } from './icons.tsx';
 import { formatDuration } from '../lib/format.ts';
+import { detach } from '../lib/async.ts';
 
 const MAX_DURATION_MS = 5 * 60 * 1000;
 
@@ -38,17 +39,17 @@ export function VoiceRecorder({ onCancel, onSend }: Props) {
   function releaseEverything() {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
-    recorderRef.current?.state === 'recording' && recorderRef.current.stop();
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    void audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current?.close().catch(() => undefined);
     audioContextRef.current = null;
   }
 
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function start(): Promise<void> {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -114,7 +115,9 @@ export function VoiceRecorder({ onCancel, onSend }: Props) {
             : 'Could not start recording on this device.',
         );
       }
-    })();
+    }
+
+    detach(start());
 
     return () => {
       cancelled = true;

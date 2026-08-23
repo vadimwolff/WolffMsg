@@ -21,6 +21,7 @@ import { useSession } from '../store/session.ts';
 import { LogoHero } from '../components/Logo.tsx';
 import { Button, Field } from '../components/primitives.tsx';
 import { LockIcon, ShieldCheckIcon, KeyIcon } from '../components/icons.tsx';
+import { onAsync } from '../lib/async.ts';
 
 type Mode = 'signin' | 'signup';
 
@@ -62,7 +63,7 @@ export function AuthScreen() {
     }
 
     setAvailability((prev) => ({ ...prev, checking: true }));
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(onAsync(async () => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -79,7 +80,7 @@ export function AuthScreen() {
       } catch {
         setAvailability({ checking: false, available: null, reason: null });
       }
-    }, 400);
+    }), 400);
 
     return () => window.clearTimeout(timer);
   }, [username, mode]);
@@ -204,7 +205,7 @@ export function AuthScreen() {
           </button>
         </div>
 
-        <form className="auth-form" onSubmit={submit} noValidate>
+        <form className="auth-form" onSubmit={onAsync(submit)} noValidate>
           <Field
             ref={usernameRef}
             label="Username"

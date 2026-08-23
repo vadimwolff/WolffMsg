@@ -18,6 +18,7 @@ import { describeOriginProblem } from '../lib/serverOrigin.ts';
 import { LogoHero } from '../components/Logo.tsx';
 import { Button, Field } from '../components/primitives.tsx';
 import { AlertIcon, KeyIcon, ServerIcon, ShieldCheckIcon } from '../components/icons.tsx';
+import { onAsync } from '../lib/async.ts';
 
 export function ConnectServerScreen() {
   const connectToServer = useSession((s) => s.connectToServer);
@@ -71,7 +72,7 @@ export function ConnectServerScreen() {
           </p>
         </div>
 
-        <form className="auth-form" onSubmit={submit} noValidate>
+        <form className="auth-form" onSubmit={onAsync(submit)} noValidate>
           <Field
             label="Server address"
             type="url"

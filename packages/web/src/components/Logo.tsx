@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 /**
  * The WolffMsg mark.
  *
@@ -24,8 +26,6 @@ const LEFT_EYE = 'M12.9 17.6 L18.6 19.9 L13.6 21.6 Z';
 const RIGHT_EYE = 'M27.1 17.6 L21.4 19.9 L26.4 21.6 Z';
 const MUZZLE = 'M20 25.4 L22.9 28.6 L20 31.8 L17.1 28.6 Z';
 
-let gradientSeq = 0;
-
 export function Logo({
   size = 32,
   variant = 'mark',
@@ -33,9 +33,12 @@ export function Logo({
   monochrome = false,
 }: LogoProps) {
   // A unique id per instance: two logos on one page must not share a gradient
-  // definition, or the second silently inherits the first.
-  gradientSeq += 1;
-  const gradientId = `wolff-aurora-${gradientSeq}`;
+  // definition, or the second silently inherits the first. `useId` rather than
+  // a module counter, because a counter mutated during render gives a
+  // different id on every pass — including React's second pass in StrictMode.
+  // `useId` wraps its value in colons; strip them so the `url(#…)` reference
+  // stays a plain identifier.
+  const gradientId = `wolff-aurora-${useId().replace(/:/g, '')}`;
 
   const mark = (
     <svg

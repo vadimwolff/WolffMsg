@@ -1,0 +1,7 @@
+{
+  // Emit configuration. The base config deliberately includes the tests so
+  // editors, `npm run typecheck` and ESLint all see them; they must not be
+  // compiled into `dist`, so the build uses this instead.
+  "extends": "./tsconfig.json",
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/tests/**", "prisma/**/*"]
+}

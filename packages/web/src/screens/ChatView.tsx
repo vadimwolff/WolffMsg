@@ -179,12 +179,21 @@ function Thread({ chatId }: { chatId: string }) {
   }, []);
 
   const title = chat.type === 'group' ? (chat.title ?? 'Group') : (chat.peer?.displayName ?? '');
-  const peerPresence = chat.peer
-    ? (presence[chat.peer.id] ?? {
-        online: chat.peer.online,
-        lastSeenAt: chat.peer.lastSeenAt,
-      })
-    : null;
+  /*
+   * Memoised because the fallback is a fresh object literal: without this it
+   * is a new value on every render, and every memo that depends on it — the
+   * subtitle below — recomputes on every render too.
+   */
+  const peerPresence = useMemo(
+    () =>
+      chat.peer
+        ? (presence[chat.peer.id] ?? {
+            online: chat.peer.online,
+            lastSeenAt: chat.peer.lastSeenAt,
+          })
+        : null,
+    [chat.peer, presence],
+  );
 
   const subtitle = useMemo(() => {
     if (typingIds.length > 0) return null; // The typing indicator replaces it.
@@ -314,8 +323,8 @@ function Thread({ chatId }: { chatId: string }) {
         >
           <PinIcon size={14} />
           <span className="pinned-banner-text">
-            {pinnedMessages[0]!.content?.body
-              ? truncate(pinnedMessages[0]!.content!.body, 70)
+            {pinnedMessages[0]?.content?.body
+              ? truncate(pinnedMessages[0].content.body, 70)
               : 'Pinned message'}
           </span>
           {pinnedMessages.length > 1 ? (

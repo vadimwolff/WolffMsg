@@ -11,6 +11,7 @@ import { formatBytes, openAttachment, saveAttachment } from '../crypto/attachmen
 import { AlertIcon, DownloadIcon, PlayIcon } from './icons.tsx';
 import { Spinner } from './primitives.tsx';
 import { useUi } from '../store/ui.ts';
+import { onAsync } from '../lib/async.ts';
 
 interface Props {
   attachment: PlaintextAttachment;
@@ -148,7 +149,7 @@ function FileTile({ attachment }: { attachment: PlaintextAttachment }) {
     <button
       type="button"
       className="file-tile"
-      onClick={async () => {
+      onClick={onAsync(async () => {
         setBusy(true);
         try {
           await saveAttachment(attachment);
@@ -157,7 +158,7 @@ function FileTile({ attachment }: { attachment: PlaintextAttachment }) {
         } finally {
           setBusy(false);
         }
-      }}
+      })}
     >
       <span className="file-tile-icon">
         {busy ? <Spinner size={16} /> : <DownloadIcon size={17} />}

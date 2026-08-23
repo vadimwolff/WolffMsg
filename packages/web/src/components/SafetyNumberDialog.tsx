@@ -19,6 +19,7 @@ import { currentSecrets } from '../crypto/session.ts';
 import { Avatar } from './Avatar.tsx';
 import { Badge, Button, Modal, Skeleton } from './primitives.tsx';
 import { AlertIcon, ShieldCheckIcon, ShieldIcon } from './icons.tsx';
+import { detach } from '../lib/async.ts';
 
 interface PeerDevice {
   deviceId: string;
@@ -45,7 +46,7 @@ export function SafetyNumberDialog({
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    async function load(): Promise<void> {
       try {
         const [userResponse, identityResponse, contactsResponse] = await Promise.all([
           api.get<{ user: PublicUser }>(`/api/users/${encodeURIComponent(userId)}`),
@@ -63,7 +64,9 @@ export function SafetyNumberDialog({
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    detach(load());
 
     return () => {
       cancelled = true;

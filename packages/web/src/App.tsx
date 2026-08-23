@@ -9,6 +9,7 @@ import { AlertIcon } from './components/icons.tsx';
 import { useSession, applyAppearanceToDocument } from './store/session.ts';
 import { useChats, connectChatEvents } from './store/chats.ts';
 import { onApiEvent } from './lib/api.ts';
+import { PREF, writePref } from './lib/prefs.ts';
 import { ToastStack } from './components/ToastStack.tsx';
 
 export function App() {
@@ -41,11 +42,8 @@ export function App() {
   // secrets — only a theme name.
   useEffect(() => {
     if (!user) return;
-    try {
-      localStorage.setItem('wolff.appearance', JSON.stringify(user.appearance));
-    } catch {
-      /* storage may be blocked; the theme simply flashes once */
-    }
+    // Storage may be blocked; then the theme simply flashes once on reload.
+    writePref(PREF.appearance, JSON.stringify(user.appearance));
   }, [user]);
 
   // Follow the OS when the user asked for "system".

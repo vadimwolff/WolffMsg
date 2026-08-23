@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
   WS_IDLE_TIMEOUT_MS,
   WS_PING_INTERVAL_MS,
@@ -124,6 +124,20 @@ async function handleUpgrade(
   }
 }
 
+/**
+ * Decode one WebSocket frame as text.
+ *
+ * `ws` hands a frame over as a Buffer, an ArrayBuffer, or — when the message
+ * arrived fragmented — an array of Buffers. Calling `.toString()` on that last
+ * shape joins the pieces with commas rather than concatenating them, quietly
+ * corrupting the JSON. Concatenating first is the only correct reading.
+ */
+export function frameText(raw: RawData): string {
+  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf8');
+  if (Buffer.isBuffer(raw)) return raw.toString('utf8');
+  return Buffer.from(raw).toString('utf8');
+}
+
 function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!header) return out;
@@ -173,7 +187,7 @@ async function onConnected(
       socket.close(1003, 'binary frames are not supported');
       return;
     }
-    void handleFrame(connection, raw.toString());
+    void handleFrame(connection, frameText(raw));
   });
 
   socket.on('close', () => {

@@ -6,6 +6,7 @@ import { useUi } from '../../store/ui.ts';
 import { Avatar } from '../Avatar.tsx';
 import { Button, Field, TextArea } from '../primitives.tsx';
 import { LogOutIcon, TrashIcon, UserIcon } from '../icons.tsx';
+import { onAsync } from '../../lib/async.ts';
 
 export function AccountSection() {
   const user = useSession((s) => s.user);
@@ -134,12 +135,12 @@ export function AccountSection() {
               <Button
                 variant="ghost"
                 icon={<TrashIcon size={16} />}
-                onClick={async () => {
+                onClick={onAsync(async () => {
                   const response = await api.delete<{ user: typeof user }>(
                     '/api/me/avatar',
                   );
                   if (response.user) setUser(response.user);
-                }}
+                })}
               >
                 Remove
               </Button>

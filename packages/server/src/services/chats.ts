@@ -679,7 +679,7 @@ export async function appendSystemMessage(
     data: {
       chatId,
       senderId: actorId,
-      systemEvent: event as unknown as Prisma.InputJsonValue,
+      systemEvent: event,
     },
     include: messageInclude,
   });

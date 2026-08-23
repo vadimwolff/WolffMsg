@@ -30,6 +30,7 @@ import {
   ShieldIcon,
 } from '../icons.tsx';
 import { formatFullDateTime } from '../../lib/format.ts';
+import { onAsync } from '../../lib/async.ts';
 
 export function SecuritySection() {
   const deviceId = useSession((s) => s.deviceId);
@@ -204,7 +205,7 @@ export function SecuritySection() {
               size="sm"
               loading={toppingUp}
               style={{ marginTop: 8 }}
-              onClick={async () => {
+              onClick={onAsync(async () => {
                 setToppingUp(true);
                 try {
                   await ensurePreKeySupply();
@@ -213,7 +214,7 @@ export function SecuritySection() {
                 } finally {
                   setToppingUp(false);
                 }
-              }}
+              })}
             >
               Publish more keys
             </Button>

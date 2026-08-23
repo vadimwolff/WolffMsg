@@ -125,7 +125,7 @@ export async function request<T = unknown>(
 
   let body: T;
   try {
-    body = response.json() as T;
+    body = response.json<T>();
   } catch {
     body = response.body as unknown as T;
   }
@@ -134,7 +134,7 @@ export async function request<T = unknown>(
     status: response.statusCode,
     body,
     rawBody: Buffer.from(response.rawPayload),
-    headers: response.headers as Record<string, unknown>,
+    headers: response.headers,
     cookies: response.cookies.map((c) => ({ name: c.name, value: c.value })),
   };
 }

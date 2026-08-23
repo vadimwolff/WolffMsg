@@ -165,6 +165,7 @@ export async function saveAttachment(
  */
 function safeFilename(name: string): string {
   const cleaned = name
+    // eslint-disable-next-line no-control-regex -- stripping them is the point
     .replace(/[\u0000-\u001F\u007F]/g, '')
     .replace(/[\u202A-\u202E\u2066-\u2069]/g, '')
     .replace(/[/\\]/g, '_')
