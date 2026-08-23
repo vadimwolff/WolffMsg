@@ -292,6 +292,26 @@ export const counters: CounterStore = store;
 export const bus: PubSub = pubsub;
 
 /**
+ * Is the counter/fan-out backend actually usable right now?
+ *
+ * Reported by the readiness probe. The in-process store is always usable —
+ * there is nothing to be unreachable — so this is only a real question when
+ * Redis is configured. A node whose Redis has gone away still answers HTTP,
+ * but its rate limits have silently become per-node and its realtime events
+ * no longer reach anyone else, so it should be taken out of rotation.
+ */
+export async function isCounterStoreReady(): Promise<boolean> {
+  if (!env.redisEnabled) return true;
+  const client = clients[0];
+  if (!client) return false;
+  try {
+    return (await client.ping()) === 'PONG';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Clear every rate-limit and presence counter between tests.
  *
  * Guarded so it can never run against a real deployment: the suite uses the

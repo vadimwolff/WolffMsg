@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
+import { isCounterStoreReady } from '../redis.js';
 import { requireAuth } from '../auth/session.js';
 import { RATE_LIMITS, consumeByUser } from '../security/rateLimit.js';
 import {
@@ -18,15 +19,33 @@ export async function miscRoutes(app: FastifyInstance): Promise<void> {
   /** Liveness probe. Deliberately reveals nothing about the deployment. */
   app.get('/api/health', async () => ({ status: 'ok' }));
 
-  /** Readiness probe — checks the database is actually reachable. */
+  /**
+   * Readiness probe — are the backing services actually reachable?
+   *
+   * Redis counts. A node that has lost it still answers HTTP, but its rate
+   * limits have quietly become per-node and its realtime events reach nobody
+   * else, so it should leave the load balancer rather than look healthy.
+   */
   app.get('/api/ready', async (_request, reply) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      return { status: 'ready' };
-    } catch {
-      reply.status(503);
-      return { status: 'unavailable' };
-    }
+    const [database, counters] = await Promise.all([
+      prisma
+        .$queryRaw`SELECT 1`.then(
+          () => true,
+          () => false,
+        ),
+      isCounterStoreReady(),
+    ]);
+
+    if (database && counters) return { status: 'ready' };
+
+    reply.status(503);
+    // Named, because "unavailable" alone sends an operator to check the wrong
+    // service half the time.
+    return {
+      status: 'unavailable',
+      database: database ? 'ok' : 'unreachable',
+      redis: counters ? 'ok' : 'unreachable',
+    };
   });
 
   /** Client bootstrap: what this server supports. */

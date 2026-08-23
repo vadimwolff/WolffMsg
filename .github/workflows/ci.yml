@@ -1,0 +1,83 @@
+#
+# Typecheck, lint, and all three test suites.
+#
+# The server suite runs against a real PostgreSQL service container rather than
+# a mock, because the properties worth testing — atomic prekey claims, cascade
+# deletes, unique constraints under a race — live in the database.
+#
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: wolff
+          POSTGRES_PASSWORD: wolff_ci_password
+          POSTGRES_DB: wolffmsg_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wolff -d wolffmsg_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # A throwaway database inside the runner. The suite truncates every table
+      # between tests, which is why it must never point anywhere else.
+      TEST_DATABASE_URL: postgresql://wolff:wolff_ci_password@localhost:5432/wolffmsg_test?schema=public
+      # Only `prisma generate` reads this; the suite drives everything from
+      # TEST_DATABASE_URL.
+      DATABASE_URL: postgresql://wolff:wolff_ci_password@localhost:5432/wolffmsg_test?schema=public
+      # Not a secret in any meaningful sense — it exists so the config
+      # validator has 32 bytes to accept. Nothing it protects outlives the job.
+      SESSION_SECRET: ci-only-session-secret-value-32-bytes-minimum
+      NODE_ENV: test
+      # No Redis service: the suite uses the in-process counter store, and
+      # adding one would test ioredis rather than WolffMsg.
+      REDIS_URL: ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the shared package
+        # Both the server and the client import its compiled output.
+        run: npm run build -w @wolffmsg/shared
+
+      - name: Generate the Prisma client
+        # Migrations are applied by the suite's own globalSetup, which also
+        # refuses a TEST_DATABASE_URL that does not name a test database.
+        run: npm run db:generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        # A green test suite that does not build is not green.
+        run: npm run build
