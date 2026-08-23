@@ -1,0 +1,84 @@
+# Deploy WolffMsg as a single service, with no terminal.
+#
+# This exists for one situation: someone who wants to run their own WolffMsg
+# but has no machine to run commands on — only a browser, possibly only a
+# phone. Render reads this file from the repository and creates everything it
+# describes, so the whole deployment is taps rather than a shell.
+#
+# It builds the Dockerfile's last stage, which is the all-in-one server: it
+# serves the web client *and* the API from one process, so the browser sees a
+# single origin and the session cookie stays `SameSite=strict`. Nothing about
+# the encryption differs from any other deployment — messages are ciphertext
+# before they leave the browser either way.
+#
+# ── What you have to supply ────────────────────────────────────────────────
+#
+# DATABASE_URL — a PostgreSQL connection string. Render's own free database is
+# deleted after a trial period, so point this at a provider whose free tier
+# persists (Neon, Supabase). Both hand you a connection string in the browser.
+#
+# ── What is genuinely worse on a free tier ─────────────────────────────────
+#
+#   • **No disk.** Attachments are written to the container filesystem, which
+#     is wiped on every deploy and restart. Text messages live in the database
+#     and survive; photos, files and voice messages do not. Add a persistent
+#     disk (a paid feature) if that matters.
+#   • **It sleeps.** A free service stops after a stretch with no traffic and
+#     takes up to a minute to wake. While asleep it delivers nothing: the
+#     WebSocket is closed, so messages arrive when the recipient next opens the
+#     app rather than instantly.
+#   • **One instance, no Redis.** REDIS_URL is left empty, so rate-limit
+#     counters and presence live in memory. That is correct for one instance
+#     and wrong for several — see ENVIRONMENT.md before scaling this up.
+#
+# Free-tier terms change; check the current ones rather than trusting this
+# comment.
+
+services:
+  - type: web
+    name: wolffmsg
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render assigns the hostname, so the exact public origin is not known
+      # until this service exists. The server reads RENDER_EXTERNAL_URL and
+      # uses it for WEB_ORIGIN and PUBLIC_URL — which is what removes the
+      # otherwise unavoidable "deploy, read the URL, edit the config, deploy
+      # again" round trip. See packages/server/src/env.ts.
+
+      # Render terminates TLS, so the session cookie must be marked Secure.
+      - key: COOKIE_SECURE
+        value: 'true'
+      # One process serves both the app and the API, so this stays strict.
+      - key: COOKIE_SAMESITE
+        value: strict
+
+      # 48 random bytes, generated once by Render and never shown in this
+      # repository. Changing it signs everyone out.
+      - key: SESSION_SECRET
+        generateValue: true
+
+      # Paste your PostgreSQL connection string in the Render dashboard.
+      # `sync: false` is what makes Render prompt for it instead of storing it
+      # here, where it would be public.
+      - key: DATABASE_URL
+        sync: false
+
+      # Empty on purpose: a single free instance uses the in-process store.
+      - key: REDIS_URL
+        value: ''
+
+      # Set to false once your own accounts exist, so the internet cannot
+      # register on your server.
+      - key: ALLOW_REGISTRATION
+        value: 'true'
+
+      - key: LOG_LEVEL
+        value: info

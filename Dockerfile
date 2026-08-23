@@ -2,14 +2,18 @@
 #
 # WolffMsg — two images from one build.
 #
-#   --target server   the API, WebSocket hub and blob store
 #   --target web      nginx serving the built client and proxying to the server
+#   --target server   the API, WebSocket hub, blob store — and the client too
 #
-# They are separate containers but a single *origin* from the browser's point
-# of view: nginx is the only thing exposed, and it forwards /api and /ws
-# onward. That is what lets the session cookie stay `SameSite=strict`, which is
-# the strongest CSRF defence available and the reason this is the recommended
-# deployment shape. See SECURITY.md for what a split-origin deployment costs.
+# `server` is deliberately the last stage, so a plain `docker build .` produces
+# the all-in-one image: one container serving both the app and its API. That is
+# what a single-service host gives you, and it is *same-origin*, which keeps the
+# session cookie at `SameSite=strict` — the strongest CSRF defence available.
+# The easiest deployment is therefore also the safest one.
+#
+# The compose stack still uses both stages, because nginx serves static files
+# better than Node does. Either way the browser sees a single origin. See
+# SECURITY.md for what a split-origin deployment costs instead.
 
 # ── Shared build stage ──────────────────────────────────────────────────────
 # One `npm ci` for the whole workspace: the client and the server share the
@@ -39,6 +43,15 @@ RUN npm run build -w @wolffmsg/server
 # BASE_PATH stays "/" and VITE_API_ORIGIN stays empty: nginx puts the API on
 # this same origin, so every request is a relative path.
 RUN npm run build -w @wolffmsg/web
+
+
+# ── Web runtime ─────────────────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS web
+
+COPY --from=build /app/packages/web/dist /usr/share/nginx/html
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 8080
 
 
 # ── Server runtime ──────────────────────────────────────────────────────────
@@ -71,6 +84,12 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/server/dist packages/server/dist
 COPY --from=build /app/packages/server/prisma packages/server/prisma
+
+# The built client, so this image can serve the whole app on its own. The
+# compose stack puts nginx in front and ignores it; a single-service host —
+# which is what most free tiers give you — serves it from here, and is
+# same-origin as a result. See packages/server/src/web.ts.
+COPY --from=build /app/packages/web/dist packages/web/dist
 # The generated Prisma client and its query engine.
 COPY --from=build /app/node_modules/.prisma node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma/client node_modules/@prisma/client
@@ -89,7 +108,8 @@ USER node
 
 ENV HOST=0.0.0.0 \
     PORT=4000 \
-    STORAGE_PATH=/app/storage
+    STORAGE_PATH=/app/storage \
+    WEB_ROOT=/app/packages/web/dist
 EXPOSE 4000
 
 # tini reaps zombies and forwards SIGTERM, so `docker stop` reaches the
@@ -97,11 +117,3 @@ EXPOSE 4000
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/server-entrypoint.sh"]
 CMD ["node", "packages/server/dist/index.js"]
 
-
-# ── Web runtime ─────────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS web
-
-COPY --from=build /app/packages/web/dist /usr/share/nginx/html
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 8080

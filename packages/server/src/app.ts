@@ -26,6 +26,7 @@ import { socialRoutes } from './routes/social.js';
 import { keyRoutes } from './routes/keys.js';
 import { mediaRoutes } from './routes/media.js';
 import { miscRoutes } from './routes/misc.js';
+import { registerWebClient } from './web.js';
 
 /**
  * Endpoints reachable without a session. Everything else requires one; the
@@ -64,22 +65,37 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, {
-    // The API serves JSON and opaque blobs; it never renders HTML, so the
-    // strictest possible policy applies.
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-        baseUri: ["'none'"],
-        formAction: ["'none'"],
-      },
-    },
+    /*
+     * Set per response instead, in the hook below. This process may now serve
+     * the web client as well as the API, and those need opposite policies: the
+     * API's `default-src 'none'` would block the client's own scripts, and the
+     * client's policy would be far too generous for a JSON endpoint.
+     */
+    contentSecurityPolicy: false,
+    frameguard: { action: 'deny' },
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: 'same-site' },
     referrerPolicy: { policy: 'no-referrer' },
     hsts: env.isProduction
       ? { maxAge: 31_536_000, includeSubDomains: true, preload: false }
       : false,
+  });
+
+  /**
+   * The API's own Content Security Policy.
+   *
+   * It serves JSON and opaque blobs and never renders HTML, so nothing needs
+   * to be permitted at all. The client's policy travels inside its HTML (see
+   * packages/web/csp.ts), which is what lets a static host have one too.
+   */
+  app.addHook('onSend', async (request, reply) => {
+    if (!request.url.startsWith('/api')) return;
+    // Blob routes set a stricter, sandboxed policy of their own.
+    if (reply.getHeader('content-security-policy')) return;
+    reply.header(
+      'Content-Security-Policy',
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    );
   });
 
   await app.register(cors, {
@@ -145,6 +161,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     assertCsrf(request);
 
     const routeUrl = request.routeOptions?.url ?? request.url.split('?')[0] ?? '';
+
+    /*
+     * Only the API is session-gated. When this process also serves the web
+     * client, those files are public by nature — they are the same bytes for
+     * everyone, and the client cannot present a session before it has loaded.
+     * Gating them would mean a blank 401 instead of a sign-in screen.
+     */
+    if (!routeUrl.startsWith('/api')) return;
+
     const key = `${request.method}:${routeUrl}`;
     if (PUBLIC_ROUTES.has(key)) return;
 
@@ -163,6 +188,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(keyRoutes);
   await app.register(mediaRoutes);
   await app.register(miscRoutes);
+
+  // Last, so nothing it registers can shadow an API route.
+  await registerWebClient(app);
 
   return app;
 }

@@ -10,6 +10,7 @@ import {
 } from './helpers.js';
 import { hashPassword, needsRehash, verifyPassword } from '../auth/password.js';
 import { env } from '../env.js';
+import { shouldServeAppShell } from '../web.js';
 
 beforeEach(async () => {
   await resetDatabase();
@@ -592,3 +593,47 @@ async function loginSecond(username: string) {
     csrfToken: csrf?.value ?? '',
   };
 }
+
+/*
+ * The API and the web client can now be served by the same process, which
+ * means the auth gate has to tell them apart. Getting this wrong in either
+ * direction is bad: gate the client and a visitor sees a blank 401 instead of
+ * a sign-in screen; stop gating the API and everything is public.
+ */
+describe('serving the client alongside the API', () => {
+  it('still refuses an API route without a session', async () => {
+    const response = await request({ method: 'GET', url: '/api/chats' });
+    expect(response.status).toBe(401);
+  });
+
+  it('does not answer an API miss with the app shell', async () => {
+    // HTML here would turn a mistyped endpoint into a parse error at the call
+    // site rather than a clear failure.
+    const actor = await createActor();
+    const response = await request({
+      method: 'GET',
+      url: '/api/definitely-not-a-route',
+      actor,
+    });
+    expect(response.status).toBe(404);
+    expect(String(response.headers['content-type'])).toContain('application/json');
+  });
+
+  it('sets a deny-everything policy on API responses', async () => {
+    const response = await request({ method: 'GET', url: '/api/config' });
+    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
+  });
+
+  it('decides the app-shell fallback by method and path', () => {
+    // GET of an unknown path renders the client, which routes it.
+    expect(shouldServeAppShell('GET', '/settings')).toBe(true);
+    expect(shouldServeAppShell('GET', '/chat/abc?x=1')).toBe(true);
+    // The API and the socket are never the client's business.
+    expect(shouldServeAppShell('GET', '/api/chats')).toBe(false);
+    expect(shouldServeAppShell('GET', '/api')).toBe(false);
+    expect(shouldServeAppShell('GET', '/ws')).toBe(false);
+    // There is no page to render for a write.
+    expect(shouldServeAppShell('POST', '/settings')).toBe(false);
+    expect(shouldServeAppShell('DELETE', '/anything')).toBe(false);
+  });
+});

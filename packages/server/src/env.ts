@@ -22,6 +22,26 @@ function loadDotEnv(): void {
 }
 loadDotEnv();
 
+/**
+ * Some hosts inject the public URL of the service they just created.
+ *
+ * `WEB_ORIGIN` has to be the exact origin a browser will use, and on a
+ * platform that assigns the hostname there is no way to know it in advance —
+ * which for someone deploying by hand means a chicken-and-egg step: create the
+ * service, read the URL, edit the config, redeploy. Using what the platform
+ * already tells us removes that step entirely.
+ *
+ * An explicitly set value always wins, so this can never override a real
+ * configuration.
+ */
+function adoptPlatformUrl(): void {
+  const assigned = process.env.RENDER_EXTERNAL_URL?.trim();
+  if (!assigned) return;
+  process.env.WEB_ORIGIN ??= assigned;
+  process.env.PUBLIC_URL ??= assigned;
+}
+adoptPlatformUrl();
+
 const booleanish = z
   .string()
   .transform((v) => v.trim().toLowerCase())
@@ -59,6 +79,17 @@ const schema = z.object({
   SESSION_SECRET: z
     .string()
     .min(32, 'SESSION_SECRET must be at least 32 characters of entropy'),
+
+  /*
+   * Serve the built web client from this process when set (e.g.
+   * `packages/web/dist`). Empty means the client is served by something else —
+   * nginx in the compose stack, or a static host.
+   *
+   * Setting it is what makes a one-process deployment possible, and a
+   * one-process deployment is same-origin, which is the *stronger* cookie
+   * posture. See src/web.ts.
+   */
+  WEB_ROOT: z.string().optional().default(''),
 
   STORAGE_DRIVER: z.enum(['local']).default('local'),
   STORAGE_PATH: z.string().default('./storage'),

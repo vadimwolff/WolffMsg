@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
+import { shouldServeAppShell, webRoot } from './web.js';
 import { env } from './env.js';
 import { logger } from './logger.js';
 
@@ -55,6 +56,19 @@ export const rateLimited = (message: string, retryAfterSeconds: number) => {
 
 export function registerErrorHandler(app: FastifyInstance): void {
   app.setNotFoundHandler((request, reply) => {
+    /*
+     * Single-page fallback, when this process is also serving the client: an
+     * unmatched path renders the app, which decides what to show. A miss under
+     * `/api` is a real 404 and stays JSON — answering it with HTML would turn a
+     * mistyped endpoint into a parse error at the call site instead of a clear
+     * "not found".
+     */
+    if (webRoot() && shouldServeAppShell(request.method, request.url)) {
+      reply.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+      // `sendFile` comes from @fastify/static, registered when WEB_ROOT is set.
+      return reply.sendFile('index.html');
+    }
+
     reply.status(404).send({
       error: { code: 'not_found', message: 'Not found' },
     });
