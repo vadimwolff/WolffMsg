@@ -1,7 +1,10 @@
 {
-  // Emit configuration. The base config deliberately includes the tests so
-  // editors, `npm run typecheck` and ESLint all see them; they must not be
-  // compiled into `dist`, so the build uses this instead.
+  // Emit configuration. The base config deliberately includes the tests and
+  // the seed script so editors, `npm run typecheck` and ESLint all see them;
+  // neither belongs in `dist`, so the build uses this instead.
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src"
+  },
   "exclude": ["dist", "node_modules", "src/**/*.test.ts", "src/tests/**", "prisma/**/*"]
 }

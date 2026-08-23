@@ -1,0 +1,36 @@
+# Keep the build context small and, more importantly, keep secrets and local
+# state out of it entirely — anything copied in is recoverable from the image
+# layers even if a later step deletes it.
+
+.env
+.env.*
+!.env.example
+
+node_modules
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.vite
+**/*.tsbuildinfo
+
+.git
+.github
+.gitignore
+
+# Local runtime state: uploaded blobs, logs, the Redis dump.
+storage
+uploads
+logs
+*.log
+dump.rdb
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Docs and images are not needed to build either runtime.
+*.md
+!README.md

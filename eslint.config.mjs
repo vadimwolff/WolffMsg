@@ -181,6 +181,10 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
       // Reaching into internals is how a test proves an invariant holds.
       '@typescript-eslint/no-unsafe-assignment': 'off',
+      // A test that plants a value in storage, or feeds a `javascript:` URL to
+      // a validator, is exercising the guard rather than evading it.
+      'no-restricted-globals': 'off',
+      'no-script-url': 'off',
     },
   },
 

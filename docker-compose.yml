@@ -1,0 +1,113 @@
+# WolffMsg — a complete deployment.
+#
+#   cp .env.example .env      then fill in SESSION_SECRET and the passwords
+#   docker compose up -d --build
+#   open http://localhost:8080
+#
+# Only `web` is published. The server, the database and Redis talk to each
+# other on the compose network and are not reachable from the host, so the
+# database is never one misconfigured firewall away from the internet.
+#
+# Put TLS in front of `web` before this is reachable from anywhere real, and
+# set COOKIE_SECURE=true once you have. WolffMsg's encryption does not depend
+# on TLS — message bodies are already ciphertext before they leave the browser
+# — but session cookies do.
+
+name: wolffmsg
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wolff}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-wolffmsg}
+      # Scrypt password storage and checksummed pages; both are cheap here.
+      POSTGRES_INITDB_ARGS: '--data-checksums --auth-host=scram-sha-256'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The server refuses to start against a database that is not ready, so
+      # compose waits for this rather than letting it crash-loop.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-wolff} -d ${POSTGRES_DB:-wolffmsg}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # No ports: only the server needs to reach it.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Rate-limit counters and presence are the only things here, and both are
+    # rebuildable — so no persistence, and nothing sensitive to lose.
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    build:
+      context: .
+      target: server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+
+      DATABASE_URL: >-
+        postgresql://${POSTGRES_USER:-wolff}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-wolffmsg}?schema=public
+      REDIS_URL: redis://redis:6379
+
+      # Must be the exact origin a browser will use, including the port. The
+      # server refuses cross-origin writes from anywhere else.
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      # Same origin via nginx, so the strongest cookie setting applies.
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-strict}
+      # Leave false only while testing over plain HTTP on localhost.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env — openssl rand -base64 48}
+
+      STORAGE_PATH: /app/storage
+      MAX_ATTACHMENT_BYTES: ${MAX_ATTACHMENT_BYTES:-104857600}
+      MAX_AVATAR_BYTES: ${MAX_AVATAR_BYTES:-4194304}
+
+      STUN_SERVERS: ${STUN_SERVERS:-stun:stun.l.google.com:19302}
+      TURN_SERVER: ${TURN_SERVER:-}
+      TURN_USERNAME: ${TURN_USERNAME:-}
+      TURN_PASSWORD: ${TURN_PASSWORD:-}
+
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+    volumes:
+      - blob-storage:/app/storage
+    # No ports: nginx is the only thing that talks to it.
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+
+volumes:
+  postgres-data:
+  # Encrypted attachment blobs. The server holds no key that opens them.
+  blob-storage:
