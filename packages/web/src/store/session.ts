@@ -29,6 +29,7 @@ import { destroyVault } from '../crypto/keyVault.ts';
 import { destroyDb } from '../lib/idb.ts';
 import { clearMemory } from '../crypto/messageCache.ts';
 import { releaseAllAttachments } from '../crypto/attachments.ts';
+import { useUi } from './ui.ts';
 
 export interface ServerConfig {
   registrationOpen: boolean;
@@ -71,6 +72,8 @@ interface SessionState {
   }) => Promise<void>;
   signIn: (input: { username: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
+  /** The server has already invalidated this session; tear down locally. */
+  handleRevoked: (reason: string) => Promise<void>;
   refreshUser: () => Promise<void>;
   applyAppearance: (appearance: Partial<AppearanceSettings>) => Promise<void>;
   setUser: (user: SelfUser) => void;
@@ -334,7 +337,7 @@ export const useSession = create<SessionState>((set, get) => ({
         applyAppearanceToDocument(response.user.appearance);
         set({ phase: 'signed-in', user: response.user, deviceId: response.deviceId });
         realtime.connect();
-        void runKeyMaintenance();
+          void runKeyMaintenance();
         return;
       } catch (err) {
         // A wrong password must surface as a wrong password, not silently
@@ -384,6 +387,36 @@ export const useSession = create<SessionState>((set, get) => ({
     forgetCsrfToken();
 
     set({ phase: 'signed-out', user: null, deviceId: null });
+  },
+
+  handleRevoked: async (reason) => {
+    /*
+     * Reached when another device revoked this session, or a password change
+     * invalidated it. The session is already gone server-side, so there is
+     * nothing to log out *from* — but this device is still holding decrypted
+     * messages and unwrapped keys in memory, and revoking a session has to mean
+     * they stop being available here rather than lingering until the next
+     * request happens to come back 401.
+     */
+    if (get().phase !== 'signed-in') return;
+
+    realtime.disconnect();
+    releaseAllAttachments();
+    clearMemory();
+    await destroyVault().catch(() => undefined);
+    await destroyDb().catch(() => undefined);
+    forgetSession();
+    forgetCsrfToken();
+
+    set({ phase: 'signed-out', user: null, deviceId: null });
+    useUi
+      .getState()
+      .toast(
+        reason === 'password-changed'
+          ? 'You were signed out because the account password changed.'
+          : 'This device was signed out from another device.',
+        'warning',
+      );
   },
 
   refreshUser: async () => {

@@ -201,7 +201,12 @@ arrives as `SameSite=None; Secure` with the `__Host-` prefix, that messages are
 delivered and decrypted over the cross-origin WebSocket, and that the CSRF
 token round-trips so writes succeed.
 
-Both drives also fail on any Content Security Policy violation. That is how
+A third drive covers session revocation across two devices: one account signed
+in twice, the second device revokes all other sessions, and the first must drop
+to the sign-in screen *from the socket event alone*, without making an HTTP
+request of its own.
+
+The drives also fail on any Content Security Policy violation. That is how
 the missing `'wasm-unsafe-eval'` was caught before it shipped: the policy
 blocked libsodium's WebAssembly module, and the app could not encrypt anything
 at all.

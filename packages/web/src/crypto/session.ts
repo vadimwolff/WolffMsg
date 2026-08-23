@@ -365,3 +365,24 @@ export async function runKeyMaintenance(): Promise<void> {
   await ensurePreKeySupply();
   await rotateSignedPreKeyIfStale();
 }
+
+/*
+ * The server emits `prekeys:low` for every message addressed to a device whose
+ * supply is short, so a busy chat produces a burst of them. Publishing keys
+ * costs a round trip and some CPU, and one top-up answers the whole burst.
+ */
+const MAINTENANCE_COOLDOWN_MS = 60_000;
+let lastMaintenance = 0;
+
+/** Run maintenance unless it already ran within the cooldown. */
+export function runKeyMaintenanceThrottled(): Promise<void> {
+  const now = Date.now();
+  if (now - lastMaintenance < MAINTENANCE_COOLDOWN_MS) return Promise.resolve();
+  lastMaintenance = now;
+  return runKeyMaintenance();
+}
+
+/** Clear the cooldown, so a fresh sign-in is never throttled by the last one. */
+export function resetKeyMaintenanceThrottled(): void {
+  lastMaintenance = 0;
+}

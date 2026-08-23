@@ -10,6 +10,7 @@ import { useSession, applyAppearanceToDocument } from './store/session.ts';
 import { useChats, connectChatEvents } from './store/chats.ts';
 import { onApiEvent } from './lib/api.ts';
 import { PREF, writePref } from './lib/prefs.ts';
+import { connectSystemEvents } from './lib/systemEvents.ts';
 import { ToastStack } from './components/ToastStack.tsx';
 
 export function App() {
@@ -35,7 +36,17 @@ export function App() {
     [],
   );
 
-  useEffect(() => (phase === 'signed-in' ? connectChatEvents() : undefined), [phase]);
+  useEffect(() => {
+    if (phase !== 'signed-in') return;
+    // Two subscriptions: one folds conversation events into what is on screen,
+    // the other acts on events about this device's keys and this session.
+    const offChats = connectChatEvents();
+    const offSystem = connectSystemEvents();
+    return () => {
+      offChats();
+      offSystem();
+    };
+  }, [phase]);
 
   // Mirror the appearance choice into localStorage purely so the inline script
   // in index.html can paint the right theme before React mounts. It holds no
