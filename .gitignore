@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Environment / secrets — never commit real values
+.env
+.env.*
+!.env.example
+
+# Local runtime state
+storage/
+uploads/
+logs/
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Prisma local artifacts
+packages/server/prisma/*.db
+packages/server/prisma/*.db-journal

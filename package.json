@@ -1,0 +1,40 @@
+{
+  "name": "wolffmsg",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WolffMsg — private end-to-end encrypted messenger",
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/web"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "npm run build -w @wolffmsg/shared && npm run build -w @wolffmsg/server && npm run build -w @wolffmsg/web",
+    "dev": "concurrently -k -n server,web -c magenta,cyan \"npm run dev -w @wolffmsg/server\" \"npm run dev -w @wolffmsg/web\"",
+    "dev:server": "npm run dev -w @wolffmsg/server",
+    "dev:web": "npm run dev -w @wolffmsg/web",
+    "start": "npm run start -w @wolffmsg/server",
+    "test": "npm run test -w @wolffmsg/shared && npm run test -w @wolffmsg/server && npm run test -w @wolffmsg/web",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "npm run typecheck -w @wolffmsg/shared && npm run typecheck -w @wolffmsg/server && npm run typecheck -w @wolffmsg/web",
+    "db:generate": "npm run db:generate -w @wolffmsg/server",
+    "db:migrate": "npm run db:migrate -w @wolffmsg/server",
+    "db:deploy": "npm run db:deploy -w @wolffmsg/server",
+    "db:studio": "npm run db:studio -w @wolffmsg/server",
+    "seed": "npm run seed -w @wolffmsg/server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.16.0"
+  }
+}
