@@ -317,7 +317,8 @@ these as an explicit negative test.
   parameterised, and the test-only `TRUNCATE`.
 - **XSS**: React escapes by default; `dangerouslySetInnerHTML` is banned by an
   ESLint rule. Links in message text are parsed and rendered as elements rather
-  than injected as markup, and `javascript:` URLs are rejected.
+  than injected as markup, and `javascript:` URLs are rejected. Behind that
+  sits the Content Security Policy below.
 - **Path traversal**: uploaded file names are never used to build a path. Every
   blob gets a server-generated random storage key, and the resolved path is
   checked to be inside the storage root before any write or read.
@@ -347,7 +348,58 @@ these as an explicit negative test.
 
 ---
 
-## 10. Rate limits
+## 10. Content Security Policy
+
+The client ships a strict CSP, emitted as a `<meta http-equiv>` **inside the
+built HTML** rather than only as a response header. That is deliberate: a
+static host — GitHub Pages, a CDN, an S3 bucket — cannot set headers, and the
+policy has to travel with the file or those deployments have none at all.
+
+```
+default-src 'none';
+script-src 'self' 'wasm-unsafe-eval' 'sha256-…';
+style-src 'self' 'unsafe-inline';
+img-src 'self' blob: data:;
+media-src 'self' blob:;
+font-src 'self';
+connect-src 'self';
+worker-src 'self'; manifest-src 'self';
+object-src 'none'; base-uri 'none'; form-action 'none';
+upgrade-insecure-requests
+```
+
+Three parts of that are worth explaining rather than glossing over:
+
+- **`'wasm-unsafe-eval'` is required, not a concession.** libsodium compiles a
+  WebAssembly module; without it the entire crypto core fails to load and the
+  app cannot encrypt anything. It is the narrow directive that permits *only*
+  WebAssembly compilation — it does not enable `eval()` or any other
+  string-to-JavaScript path, which is exactly why it exists separately from
+  `'unsafe-eval'`. There is no `'unsafe-eval'` and no `'unsafe-inline'` for
+  script anywhere in the policy.
+- **`'unsafe-inline'` in `style-src` permits style attributes, not script.**
+  React writes component styles as inline `style` attributes and Framer Motion
+  mutates them every frame. It is unavoidable and much narrower than it sounds.
+- **The inline script hash is computed from the final built HTML**, so it
+  cannot drift from what actually ships. Editing the theme-painting script
+  updates the hash automatically.
+
+`connect-src 'self'` is the whole point for the recommended deployment: an
+injected script has nowhere to send a decrypted message. A build pinned to a
+separate API origin names that origin and its WebSocket exactly. **A build that
+lets each visitor choose their own server cannot know the answer at build
+time**, and falls back to `https: wss:` plus loopback — that still rules out
+`http:`, `data:` and every non-secure exfiltration path, but it does not
+restrict *which* secure host, and it should not be described as if it did. It
+is opt-in (`ALLOW_RUNTIME_SERVER`) and is what the GitHub Pages workflow uses.
+
+`frame-ancestors` cannot be expressed in a meta tag; `X-Frame-Options: DENY` is
+set as a header instead. The API sets its own, stricter policy on its own
+responses, and blob responses set a third (`default-src 'none'; sandbox`).
+
+---
+
+## 11. Rate limits
 
 Anonymous endpoints are keyed by an address hint; authenticated ones by user
 id, so one person behind a shared NAT cannot lock out a whole building.
@@ -375,7 +427,7 @@ Run Redis.
 
 ---
 
-## 11. Logging
+## 12. Logging
 
 Structured logs (pino) are redacted at the logger, not at each call site.
 Passwords, tokens, private keys, cookie values, authorization headers and
@@ -384,7 +436,7 @@ a message and a code; stack traces are logged, never returned.
 
 ---
 
-## 12. Push notifications
+## 13. Push notifications
 
 Push payloads contain **no message content**, because the server has none to
 send. A push carries at most a chat id and a generic title. The service worker
@@ -394,7 +446,7 @@ Push is optional and off unless VAPID keys are configured.
 
 ---
 
-## 13. Calls
+## 14. Calls
 
 Voice and video use WebRTC with DTLS-SRTP, which is end-to-end encrypted
 between peers by construction. The server relays signalling without inspecting
@@ -407,7 +459,7 @@ the TURN server sees the encrypted media stream (not its contents).
 
 ---
 
-## 14. Known limitations, collected
+## 15. Known limitations, collected
 
 1. No post-compromise recovery; no Double Ratchet. (§4)
 2. Forward secrecy lapses when one-time prekeys are exhausted. (§3)
@@ -415,7 +467,7 @@ the TURN server sees the encrypted media stream (not its contents).
 4. All communication metadata is visible to the server. (§6)
 5. A compromised server can serve malicious JavaScript. (§5)
 6. The local decrypted message cache is readable on an unlocked device. (§5)
-7. WebRTC without TURN reveals peer IP addresses. (§13)
+7. WebRTC without TURN reveals peer IP addresses. (§14)
 8. `COOKIE_SAMESITE=none` weakens CSRF defence to application-level only. (§7)
 9. No formal third-party security audit has been performed on this codebase.
 

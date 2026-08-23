@@ -1,7 +1,22 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { cspPlugin } from './csp.ts';
 
 const API_TARGET = process.env.VITE_API_TARGET ?? 'http://127.0.0.1:4000';
+
+const API_ORIGIN = (process.env.VITE_API_ORIGIN ?? '').trim();
+
+/*
+ * Does this build let the person using it name their own server?
+ *
+ * It costs a real amount of CSP tightness — `connect-src` has to allow secure
+ * origins generally rather than one named host — so it is off unless asked
+ * for. A static host with no API behind it needs it; every other deployment
+ * does not.
+ */
+const ALLOW_RUNTIME_SERVER = /^(1|true|yes)$/i.test(
+  (process.env.ALLOW_RUNTIME_SERVER ?? '').trim(),
+);
 
 /*
  * Where the built client will be served from. `/` covers the normal case — the
@@ -17,7 +32,10 @@ const BASE = (() => {
 
 export default defineConfig({
   base: BASE,
-  plugins: [react()],
+  plugins: [
+    react(),
+    cspPlugin({ apiOrigin: API_ORIGIN, allowRuntimeServer: ALLOW_RUNTIME_SERVER }),
+  ],
   /*
    * libsodium's ESM bundle carries a Node-only branch that uses top-level
    * await to reach `url` and `path`. That branch is dead in a browser, but
@@ -63,6 +81,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // `csp.test.ts` sits beside the build plugin it covers, outside src/.
+    include: ['src/**/*.test.{ts,tsx}', '*.test.ts'],
   },
 });

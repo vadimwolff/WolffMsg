@@ -9,8 +9,8 @@ npm run typecheck # strict TypeScript across all three
 npm run lint      # ESLint, type-aware
 ```
 
-**196 tests** at the time of writing: 35 cryptographic, 143 server
-integration, 18 client unit.
+**209 tests** at the time of writing: 35 cryptographic, 143 server
+integration, 31 client unit.
 
 ---
 
@@ -165,13 +165,21 @@ same client id, asserting exactly one row.
 
 ---
 
-## `@wolffmsg/web` — client unit (18 tests)
+## `@wolffmsg/web` — client unit (31 tests)
 
-`packages/web/src/lib/serverOrigin.test.ts` covers the server-address
-validator, which is the input every API URL and the WebSocket are built from:
-`javascript:` and `data:` URLs refused, plain HTTP refused except on loopback,
-paths and query strings refused, a stored value re-validated on load rather
-than trusted because it once passed the form.
+`serverOrigin.test.ts` (18) covers the server-address validator, which is the
+input every API URL and the WebSocket are built from: `javascript:` and `data:`
+URLs refused, plain HTTP refused except on loopback, paths and query strings
+refused, a stored value re-validated on load rather than trusted because it
+once passed the form.
+
+`csp.test.ts` (13) covers the Content Security Policy the build emits — logic
+that runs once, where a mistake is invisible until it reaches a browser, either
+as a policy that permits what it should not or as one that breaks the app.
+Both failure modes have already happened here: an early version omitted
+`'wasm-unsafe-eval'` and blocked libsodium entirely. The tests pin both
+directions, including that `connect-src` never widens unless explicitly asked
+to.
 
 ---
 
@@ -193,7 +201,13 @@ arrives as `SameSite=None; Secure` with the `__Host-` prefix, that messages are
 delivered and decrypted over the cross-origin WebSocket, and that the CSRF
 token round-trips so writes succeed.
 
-Both currently pass.
+Both drives also fail on any Content Security Policy violation. That is how
+the missing `'wasm-unsafe-eval'` was caught before it shipped: the policy
+blocked libsodium's WebAssembly module, and the app could not encrypt anything
+at all.
+
+Both currently pass, against the production build served behind a
+single-origin proxy standing in for `docker/nginx.conf`.
 
 ---
 

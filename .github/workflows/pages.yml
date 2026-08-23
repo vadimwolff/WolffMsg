@@ -70,6 +70,12 @@ jobs:
         env:
           BASE_PATH: ${{ steps.base.outputs.path }}
           VITE_API_ORIGIN: ${{ vars.API_ORIGIN }}
+          # A published client can always be re-pointed at another server from
+          # Settings, so its CSP has to permit connections it cannot name at
+          # build time. This loosens `connect-src` to secure origins generally
+          # — the honest cost of letting people bring their own server, and the
+          # reason it is off by default everywhere else.
+          ALLOW_RUNTIME_SERVER: 'true'
         run: npm run build -w @wolffmsg/web
 
       - name: Prepare the artifact

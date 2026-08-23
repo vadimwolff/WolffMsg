@@ -156,7 +156,7 @@ the build fails, rather than production.
 ```bash
 npm run dev          # server and client together
 npm run build        # all three packages
-npm test             # 196 tests across all three
+npm test             # 209 tests across all three
 npm run typecheck    # strict TypeScript
 npm run lint         # ESLint, type-aware
 
