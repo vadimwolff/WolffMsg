@@ -8,7 +8,13 @@ import { logger } from './logger.js';
  * through tagged templates for the same reason — never string concatenation.
  */
 export const prisma = new PrismaClient({
-  log: env.LOG_LEVEL === 'trace' ? ['query', 'warn', 'error'] : ['warn', 'error'],
+  // The suite deliberately provokes constraint violations to prove they are
+  // handled; logging them would drown the useful output.
+  log: env.isTest
+    ? []
+    : env.LOG_LEVEL === 'trace'
+      ? ['query', 'warn', 'error']
+      : ['warn', 'error'],
 });
 
 export async function connectDatabase(): Promise<void> {

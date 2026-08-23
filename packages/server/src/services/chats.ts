@@ -262,7 +262,7 @@ export async function createGroup(
     throw badRequest(`A group can hold at most ${LIMITS.groupMembersMax} people`);
   }
 
-  const allowed = await filterAddableMembers(ownerId, requested);
+  const { allowed } = await partitionAddableMembers(ownerId, requested);
 
   const chat = await prisma.chat.create({
     data: {
@@ -294,23 +294,37 @@ export async function createGroup(
   return summary;
 }
 
-/** Drop anyone who has blocked the actor or whose privacy settings say no. */
-async function filterAddableMembers(
+/**
+ * Split candidates into those the actor may add and those they may not.
+ *
+ * Someone can be unaddable because they blocked the actor, because their
+ * "who can add me to groups" setting excludes them, or because the account no
+ * longer exists. The caller reports the skipped ids back to the client so the
+ * UI can say who was left out instead of quietly losing them.
+ */
+async function partitionAddableMembers(
   actorId: string,
   candidateIds: string[],
-): Promise<string[]> {
-  if (candidateIds.length === 0) return [];
+): Promise<{ allowed: string[]; skipped: string[] }> {
+  if (candidateIds.length === 0) return { allowed: [], skipped: [] };
+
   const existing = await prisma.user.findMany({
     where: { id: { in: candidateIds }, disabledAt: null },
     select: { id: true },
   });
+  const existingIds = new Set(existing.map((u) => u.id));
+
   const allowed: string[] = [];
+  const skipped = candidateIds.filter((id) => !existingIds.has(id));
+
   for (const user of existing) {
     if ((await groupAddPermission(actorId, user.id)) === 'allowed') {
       allowed.push(user.id);
+    } else {
+      skipped.push(user.id);
     }
   }
-  return allowed;
+  return { allowed, skipped };
 }
 
 /* ──────────────────────────── group management ──────────────────────────── */
@@ -367,7 +381,7 @@ export async function addMembers(
   chatId: string,
   actorId: string,
   userIds: string[],
-): Promise<string[]> {
+): Promise<{ added: string[]; skipped: string[] }> {
   await requireChatAdmin(chatId, actorId);
 
   const current = await prisma.chatMember.findMany({
@@ -381,8 +395,8 @@ export async function addMembers(
     throw badRequest(`A group can hold at most ${LIMITS.groupMembersMax} people`);
   }
 
-  const allowed = await filterAddableMembers(actorId, candidates);
-  if (allowed.length === 0) return [];
+  const { allowed, skipped } = await partitionAddableMembers(actorId, candidates);
+  if (allowed.length === 0) return { added: [], skipped };
 
   // New members see history from this point on, never what came before.
   const latest = await prisma.message.findFirst({
@@ -409,7 +423,7 @@ export async function addMembers(
     targetIds: allowed,
   });
   await notifyChatUpdate(chatId, allowed);
-  return allowed;
+  return { added: allowed, skipped };
 }
 
 export async function removeMember(

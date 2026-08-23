@@ -132,9 +132,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       const { userIds } = z
         .object({ userIds: z.array(idSchema).min(1).max(LIMITS.groupMembersMax) })
         .parse(request.body);
-      const added = await addMembers(request.params.chatId, auth.userId, userIds);
+      const result = await addMembers(request.params.chatId, auth.userId, userIds);
       return {
-        added,
+        added: result.added,
+        // People who could not be added — blocked, or whose privacy settings
+        // exclude the caller. The UI names them rather than losing them.
+        skipped: result.skipped,
         chat: await loadChatSummary(request.params.chatId, auth.userId, auth.deviceId),
       };
     },

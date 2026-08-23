@@ -1,4 +1,7 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, {
+  type FastifyBaseLogger,
+  type FastifyInstance,
+} from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -46,13 +49,17 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   const app = Fastify({
     // Fastify 5 takes a pre-built pino instance via `loggerInstance`;
-    // `logger` is reserved for inline configuration objects.
-    loggerInstance: logger,
+    // `logger` is reserved for inline configuration objects. The cast pins
+    // the instance to Fastify's own logger interface — without it, pino's
+    // concrete generic leaks into `FastifyInstance` and stops matching the
+    // plugin signatures.
+    loggerInstance: logger as unknown as FastifyBaseLogger,
     // Only honour X-Forwarded-For behind a known proxy. In development a
     // client could otherwise forge it and sidestep per-IP rate limiting.
     trustProxy: env.isProduction,
     bodyLimit: 1_000_000,
-    disableRequestLogging: env.isTest,
+    // Request logging is governed by the logger's own level, which is
+    // `silent` under test — no separate switch needed.
     genReqId: () => Math.random().toString(36).slice(2, 12),
   });
 

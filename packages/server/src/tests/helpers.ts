@@ -83,6 +83,11 @@ interface InjectOptions {
 export interface TestResponse<T = unknown> {
   status: number;
   body: T;
+  /**
+   * The unmodified response bytes. `body` decodes as UTF-8, which corrupts a
+   * binary payload, so any test reading a blob must use this.
+   */
+  rawBody: Buffer;
   headers: Record<string, unknown>;
   cookies: { name: string; value: string }[];
 }
@@ -122,6 +127,7 @@ export async function request<T = unknown>(
   return {
     status: response.statusCode,
     body,
+    rawBody: Buffer.from(response.rawPayload),
     headers: response.headers as Record<string, unknown>,
     cookies: response.cookies.map((c) => ({ name: c.name, value: c.value })),
   };

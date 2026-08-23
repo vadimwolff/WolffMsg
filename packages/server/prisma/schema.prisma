@@ -67,11 +67,11 @@ model UserSettings {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Privacy — every one of these is enforced server-side.
-  lastSeenVisibility  String  @default("contacts")
+  lastSeenVisibility  String  @default("everyone")
   avatarVisibility    String  @default("everyone")
   bioVisibility       String  @default("everyone")
   whoCanMessage       String  @default("everyone")
-  whoCanAddToGroups   String  @default("contacts")
+  whoCanAddToGroups   String  @default("everyone")
   readReceipts        Boolean @default(true)
   typingIndicators    Boolean @default(true)
 

@@ -56,7 +56,7 @@ export async function projectUser(
   const blocked = self ? false : await isBlockedEitherWay(viewerId, row.id);
 
   const lastSeenAudience = (row.settings?.lastSeenVisibility ??
-    'contacts') as PrivacyAudience;
+    'everyone') as PrivacyAudience;
   const avatarAudience = (row.settings?.avatarVisibility ??
     'everyone') as PrivacyAudience;
   const bioAudience = (row.settings?.bioVisibility ?? 'everyone') as PrivacyAudience;
@@ -101,11 +101,11 @@ export async function loadPublicUser(
 
 export function defaultPrivacy(): PrivacySettings {
   return {
-    lastSeenVisibility: 'contacts',
+    lastSeenVisibility: 'everyone',
     avatarVisibility: 'everyone',
     bioVisibility: 'everyone',
     whoCanMessage: 'everyone',
-    whoCanAddToGroups: 'contacts',
+    whoCanAddToGroups: 'everyone',
     readReceipts: true,
     typingIndicators: true,
   };

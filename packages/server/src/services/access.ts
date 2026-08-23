@@ -235,7 +235,7 @@ export async function groupAddPermission(
     where: { userId: targetId },
     select: { whoCanAddToGroups: true },
   });
-  const audience = (settings?.whoCanAddToGroups ?? 'contacts') as PrivacyAudience;
+  const audience = (settings?.whoCanAddToGroups ?? 'everyone') as PrivacyAudience;
   return (await audienceAllows(audience, targetId, actorId))
     ? 'allowed'
     : 'not-permitted';

@@ -219,6 +219,11 @@ async function onDisconnected(connection: Connection): Promise<void> {
 /**
  * Tell everyone who shares a conversation with this user about a presence
  * change — but only if the user's privacy settings permit it.
+ *
+ * Note the audience is *already* limited to people the user talks to: presence
+ * never reaches a stranger, whatever the setting says. `everyone` therefore
+ * means "everyone I have a conversation with", and `contacts` narrows that
+ * further to people the user has explicitly added.
  */
 async function broadcastPresence(userId: string, online: boolean): Promise<void> {
   const settings = await prisma.userSettings.findUnique({
