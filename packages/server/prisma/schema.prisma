@@ -1,0 +1,571 @@
+// WolffMsg — PostgreSQL schema.
+//
+// Design rule: the server stores ciphertext and the minimum routing metadata
+// required to deliver it. There is no column anywhere in this schema that
+// holds the plaintext of a private message, an attachment, or a private key.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id          String  @id @default(cuid())
+  /// Lowercase, unique, `^[a-z0-9_]{3,24}$`.
+  username    String  @unique
+  displayName String
+  bio         String?
+  avatarKey   String?
+
+  /// Argon2id PHC string. Never a plaintext or reversible value.
+  passwordHash String
+  /// Bumped whenever the password changes, invalidating older sessions.
+  passwordVersion Int @default(1)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastSeenAt  DateTime  @default(now())
+  /// Set when the account is deactivated; blocks login without deleting data.
+  disabledAt  DateTime?
+
+  settings UserSettings?
+
+  devices          Device[]
+  sessions         Session[]
+  memberships      ChatMember[]
+  messages         Message[]
+  reactions        MessageReaction[]
+  reads            MessageRead[]
+  deliveries       MessageDelivery[]
+  contacts         Contact[]          @relation("ContactOwner")
+  contactOf        Contact[]          @relation("ContactTarget")
+  blocksMade       BlockedUser[]      @relation("Blocker")
+  blocksReceived   BlockedUser[]      @relation("Blocked")
+  pushSubs         PushSubscription[]
+  notifications    Notification[]
+  securityEvents   SecurityEvent[]
+  callsInitiated   Call[]             @relation("CallInitiator")
+  callParticipants CallParticipant[]
+  ownedChats       Chat[]             @relation("ChatOwner")
+  pinnedMessages   PinnedMessage[]
+  uploads          Attachment[]
+
+  @@index([lastSeenAt])
+  @@map("users")
+}
+
+model UserSettings {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Privacy — every one of these is enforced server-side.
+  lastSeenVisibility  String  @default("contacts")
+  avatarVisibility    String  @default("everyone")
+  bioVisibility       String  @default("everyone")
+  whoCanMessage       String  @default("everyone")
+  whoCanAddToGroups   String  @default("contacts")
+  readReceipts        Boolean @default(true)
+  typingIndicators    Boolean @default(true)
+
+  // Notifications
+  notificationsEnabled Boolean   @default(true)
+  notificationPreview  Boolean   @default(false)
+  notificationSound    Boolean   @default(true)
+  mutedUntil           DateTime?
+
+  // Appearance
+  theme           String  @default("dark")
+  accent          String  @default("aurora")
+  messageDensity  String  @default("comfortable")
+  reducedMotion   Boolean @default(false)
+  fontScale       Float   @default(1)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+/// One cryptographic identity per device. The private half never leaves the
+/// client — only `identityPublicKey` is ever transmitted.
+model Device {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name     String
+  platform String
+
+  /// Ed25519 public key, 32 bytes.
+  identityPublicKey Bytes
+
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  lastIpHint   String?
+  removedAt    DateTime?
+
+  preKeys      PreKey[]
+  sessions     Session[]
+  messages     Message[]
+  messageKeys  MessageKey[]
+  deliveries   MessageDelivery[]
+  pushSubs     PushSubscription[]
+  callParticipants CallParticipant[]
+
+  @@index([userId, removedAt])
+  @@map("devices")
+}
+
+/// Published X25519 prekeys. `onetime` keys are handed out at most once,
+/// which is what gives the protocol its forward secrecy.
+model PreKey {
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Client-chosen identifier, unique only within one device.
+  keyId    String
+
+  /// "signed" (medium-term, reusable) or "onetime" (single use).
+  kind String
+
+  /// X25519 public key, 32 bytes.
+  publicKey Bytes
+  /// Ed25519 signature by the device identity key.
+  signature Bytes
+
+  createdAt DateTime  @default(now())
+  claimedAt DateTime?
+  /// Superseded signed prekeys are retired rather than deleted, so in-flight
+  /// messages addressed to them can still be opened.
+  retiredAt DateTime?
+
+  @@id([deviceId, keyId])
+  @@index([deviceId, kind, claimedAt])
+  @@map("prekeys")
+}
+
+/// An authenticated browser/app session. The cookie carries a random secret;
+/// only its keyed hash is stored here.
+model Session {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String?
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  /// HMAC-SHA256(session secret, server pepper). 32 bytes.
+  tokenHash Bytes
+  /// Invalidates the session when the account password changes.
+  passwordVersion Int @default(1)
+
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  /// Bumped on sliding rotation; the old secret stops working immediately.
+  rotatedAt    DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  revokedReason String?
+
+  ipHint    String?
+  userAgent String?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Durable brute-force accounting. Redis handles the hot path; this table
+/// survives a Redis flush so an attacker cannot reset a lockout.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  /// BLAKE2b of the submitted username — never the username itself, so the
+  /// table cannot be mined for a user list.
+  subjectHash Bytes
+  /// Truncated/hashed client address.
+  ipHint    String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([subjectHash, createdAt])
+  @@index([ipHint, createdAt])
+  @@map("login_attempts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Social graph
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Contact {
+  id      String @id @default(cuid())
+  ownerId String
+  owner   User   @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  targetId String
+  target  User   @relation("ContactTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  alias     String?
+  createdAt DateTime @default(now())
+
+  /// The identity key the owner verified, and when. If the peer's current key
+  /// stops matching this, the UI raises a "safety number changed" warning.
+  verifiedIdentityKey Bytes?
+  verifiedAt          DateTime?
+
+  @@unique([ownerId, targetId])
+  @@index([targetId])
+  @@map("contacts")
+}
+
+model BlockedUser {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("blocked_users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Chat {
+  id   String @id @default(cuid())
+  /// "direct" or "group".
+  type String
+
+  title       String?
+  description String?
+  avatarKey   String?
+
+  ownerId String?
+  owner   User?   @relation("ChatOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  /// Group setting: when true, only owner/admins may post.
+  readOnlyForMembers Boolean @default(false)
+
+  /// For direct chats: the two user ids joined by ":" in sorted order.
+  /// The unique constraint is what prevents duplicate DMs under a race.
+  directKey String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Timestamp of the newest message, denormalised so the chat list can be
+  /// ordered without touching the messages table.
+  lastMessageAt DateTime @default(now())
+
+  members  ChatMember[]
+  messages Message[]
+  pinned   PinnedMessage[]
+  calls    Call[]
+  attachments Attachment[]
+  notifications Notification[]
+
+  @@index([lastMessageAt])
+  @@map("chats")
+}
+
+model ChatMember {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "owner" | "admin" | "member". Authoritative; never read from the client.
+  role     String   @default("member")
+  joinedAt DateTime @default(now())
+  /// Members only see history from this point forward.
+  joinedAtSeq BigInt @default(0)
+
+  pinned   Boolean   @default(false)
+  archived Boolean   @default(false)
+  muted    Boolean   @default(false)
+  mutedUntil DateTime?
+
+  /// Highest message sequence this member has read, for O(1) unread counts.
+  lastReadSeq BigInt   @default(0)
+  lastReadAt  DateTime?
+
+  @@unique([chatId, userId])
+  @@index([userId, pinned, archived])
+  @@map("chat_members")
+}
+
+model Message {
+  id     String @id @default(cuid())
+  /// Strictly increasing per-server ordinal. Cursor pagination and unread
+  /// counting both key off this rather than a timestamp.
+  seq    BigInt @default(autoincrement())
+
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderDeviceId String?
+  senderDevice   Device? @relation(fields: [senderDeviceId], references: [id], onDelete: SetNull)
+
+  /// Sender-chosen idempotency key. Retrying a send with the same value
+  /// returns the original message instead of creating a duplicate.
+  clientId String?
+
+  // ── End-to-end encrypted payload ───────────────────────────────────────────
+  // These three columns are opaque to the server. There is deliberately no
+  // `body` / `text` / `content` column anywhere in this model.
+  /// XChaCha20-Poly1305 ciphertext, including the authentication tag.
+  ciphertext Bytes?
+  /// 24-byte AEAD nonce.
+  nonce      Bytes?
+  /// Ed25519 detached signature by the sender's device identity key.
+  signature  Bytes?
+  /// Envelope format version.
+  envelopeVersion Int @default(1)
+
+  /// Non-encrypted membership/administrative events (who joined, who was
+  /// promoted). These carry no user-authored text.
+  systemEvent Json?
+
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+  /// Tombstone. On delete the ciphertext columns are nulled out, so the bytes
+  /// are actually gone rather than merely hidden.
+  deletedAt DateTime?
+
+  keys        MessageKey[]
+  reactions   MessageReaction[]
+  reads       MessageRead[]
+  deliveries  MessageDelivery[]
+  attachments Attachment[]
+  pins        PinnedMessage[]
+  notifications Notification[]
+
+  @@unique([senderId, clientId])
+  @@index([chatId, seq])
+  @@index([chatId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+/// The message's content key, sealed once per recipient device.
+model MessageKey {
+  id        String  @id @default(cuid())
+  messageId String
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  deviceId  String
+  device    Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  /// Which prekey the content key was sealed to; null means the signed prekey.
+  preKeyId String?
+  /// libsodium `crypto_box_seal` output. Opaque to the server.
+  wrapped  Bytes
+
+  @@unique([messageId, deviceId])
+  @@index([deviceId])
+  @@map("message_keys")
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// A single emoji. Validated against a strict pattern so this cannot be
+  /// abused as a plaintext side channel.
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("message_reactions")
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@map("message_reads")
+}
+
+model MessageDelivery {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  deliveredAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@map("message_deliveries")
+}
+
+model PinnedMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedById String
+  pinnedBy   User    @relation(fields: [pinnedById], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([chatId, messageId])
+  @@index([chatId])
+  @@map("pinned_messages")
+}
+
+/// An uploaded, client-side-encrypted blob. The server never holds the key
+/// that opens it — that lives inside the message ciphertext.
+model Attachment {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  uploaderId String
+  uploader   User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  /// Set once the owning message is created. Unlinked blobs are swept.
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  /// Declared by the client; used only for routing hints, never to build a
+  /// filesystem path and never echoed back as an executable Content-Type.
+  mimeType      String
+  encryptedSize Int
+  /// Server-generated, random. The client's filename is never used on disk.
+  storageKey    String @unique
+  /// SHA-256 of the stored ciphertext, so corruption is detectable.
+  ciphertextHash Bytes
+
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+  @@index([messageId])
+  @@index([uploaderId, createdAt])
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Delivery & calls
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  chatId    String?
+  chat      Chat?    @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  /// "message" | "call" | "security" | "group"
+  kind      String
+  /// Never contains message content — only the fact that something happened.
+  summary   String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+  deliveredAt DateTime?
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model PushSubscription {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String?
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  endpoint String @unique
+  p256dh   String
+  auth     String
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  /// Consecutive delivery failures; the subscription is dropped at the limit.
+  failureCount Int @default(0)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model Call {
+  id     String @id @default(cuid())
+  chatId String
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  initiatorId String
+  initiator   User   @relation("CallInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+
+  /// "audio" | "video"
+  kind  String
+  /// "ringing" | "accepted" | "declined" | "missed" | "ended" | "failed"
+  state String @default("ringing")
+
+  startedAt  DateTime  @default(now())
+  answeredAt DateTime?
+  endedAt    DateTime?
+
+  participants CallParticipant[]
+
+  @@index([chatId, startedAt])
+  @@map("calls")
+}
+
+model CallParticipant {
+  id     String @id @default(cuid())
+  callId String
+  call   Call   @relation(fields: [callId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String?
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  @@unique([callId, userId])
+  @@map("call_participants")
+}
+
+/// Append-only audit trail surfaced in the Security Center. Contains no
+/// message content and no secrets.
+model SecurityEvent {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind      String
+  detail    String
+  ipHint    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("security_events")
+}

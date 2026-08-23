@@ -103,6 +103,12 @@ export interface PlaintextAttachment {
 }
 
 /**
+ * Unit separator between AAD fields. Without it, `("ab","c")` and `("a","bc")`
+ * would serialise identically and two different contexts could share an AAD.
+ */
+const FIELD_SEPARATOR = '\u001F';
+
+/**
  * Canonical AAD. Any change to this function is a wire-breaking change and
  * must come with a PROTOCOL_VERSION bump.
  */
@@ -115,7 +121,7 @@ export function buildAad(ctx: EnvelopeContext): Uint8Array {
       ctx.senderUserId,
       ctx.senderDeviceId,
       String(ctx.createdAt),
-    ].join(''),
+    ].join(FIELD_SEPARATOR),
   );
 }
 
