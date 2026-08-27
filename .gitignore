@@ -10,10 +10,17 @@ coverage/
 .env.*
 !.env.example
 
-# Local runtime state
-storage/
-uploads/
-logs/
+# Local runtime state.
+#
+# Anchored with a leading slash, or named in full. A bare `storage/` matches a
+# directory of that name at ANY depth — which silently swallowed
+# `packages/server/src/storage/`, the blob-writing source code, so the
+# repository built locally and failed everywhere else.
+/storage/
+/uploads/
+/logs/
+packages/server/storage/
+packages/server/uploads/
 *.log
 npm-debug.log*
 
