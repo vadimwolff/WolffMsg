@@ -69,16 +69,25 @@ COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
+# The root postinstall runs from here. It is a no-op when the package it
+# patches is absent, so it is safe in this image — but it must exist, or npm
+# fails the install outright.
+COPY scripts/ scripts/
 
 # `--omit=dev` after the build, so nothing that only compiles code ships.
-# `--ignore-scripts` skips the postinstall patch, which only matters to the
-# browser bundle.
+#
+# Install scripts deliberately run. `@prisma/engines` places its query and
+# migration binaries in its own postinstall, and on Alpine that is what selects
+# the musl build. Skipping them leaves the directory empty, and the first thing
+# the entrypoint does — `prisma migrate deploy` — then tries to fetch them into
+# a read-only `node_modules` at boot and dies with "Can't write to
+# /app/node_modules/@prisma/engines".
 #
 # The `prisma` CLI is a runtime dependency of the server package rather than a
-# dev one, precisely so it survives this: the entrypoint runs `migrate deploy`
-# on boot, and having the CLI and the client installed together is what keeps
-# them at the same version.
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+# dev one, precisely so it survives `--omit=dev`: the entrypoint runs
+# `migrate deploy` on boot, and having the CLI and the client installed
+# together is what keeps them at the same version.
+RUN npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force
 
 COPY --from=build /app/packages/shared/dist packages/shared/dist
@@ -99,7 +108,12 @@ RUN chmod +x /usr/local/bin/server-entrypoint.sh
 
 # Encrypted blobs live here. The volume is declared so an image rebuild never
 # takes someone's attachments with it.
-RUN mkdir -p /app/storage && chown -R node:node /app/storage
+RUN mkdir -p /app/storage
+
+# Everything above ran as root, so root owns it. The process runs as `node`,
+# and the Prisma CLI writes inside `node_modules` while applying migrations —
+# without this it cannot, and the container dies on its first boot.
+RUN chown -R node:node /app
 VOLUME ["/app/storage"]
 
 # Never root: a path-traversal or upload bug should not reach the filesystem

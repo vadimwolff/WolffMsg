@@ -10,7 +10,10 @@
 set -eu
 
 echo "wolffmsg: applying database migrations"
-npx --no-install prisma migrate deploy --schema packages/server/prisma/schema.prisma
+# The binary directly rather than through npx: npx adds a resolution step and a
+# cache directory it may want to write to, and neither earns its keep when the
+# CLI is installed right here.
+./node_modules/.bin/prisma migrate deploy --schema packages/server/prisma/schema.prisma
 
 echo "wolffmsg: starting server"
 exec "$@"
